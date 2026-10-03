@@ -144,6 +144,7 @@ void loop()
   if (controller.CAN_init_error == 0)
   {
     CAN_protocol(Serial);
+    Capture_stream_CAN();
     CAN_heartbeat(ms);
     CAN_watchdog(ms);
   }

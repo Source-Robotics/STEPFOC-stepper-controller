@@ -174,25 +174,31 @@ float fast_modf2(float x){
 /// @return output of the filter
 int movingAverage(int value){
 
-  const byte nvalues = 20;             // Moving average window size 4
-
   static byte current = 0;            // Index for current value
-  static byte cvalues = 0;            // Count of values read (<= nvalues)
-  static int sum = 0;               // Rolling sum
-  static int values[nvalues];
+  static byte cvalues = 0;            // Count of values read (<= window)
+  static int sum = 0;                 // Rolling sum
+  static int values[VELOCITY_WINDOW_MAX];
+  static byte window = VELOCITY_WINDOW_DEFAULT;
 
-  //sum += value;
-  sum  = sum + value;
+  // A new window (IN_VEL_WINDOW) restarts the average from this sample.
+  if (Velocity_window != window)
+  {
+    window = Velocity_window;
+    current = 0;
+    cvalues = 0;
+    sum = 0;
+  }
+
+  sum = sum + value;
   // If the window is full, adjust the sum by deleting the oldest value
-  if (cvalues == nvalues)
-    //sum -= values[current];
+  if (cvalues == window)
     sum = sum - values[current];
   values[current] = value;          // Replace the oldest with the latest
 
-  if (++current >= nvalues)
+  if (++current >= window)
     current = 0;
 
-  if (cvalues < nvalues)
+  if (cvalues < window)
     cvalues += 1;
 
   return sum /  cvalues;

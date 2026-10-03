@@ -470,6 +470,26 @@ void IT_callback(void)
     Brake_Coast();
   }
 
+  /* Capture after the loop, so a sample lines up with the setpoint it produced */
+  if (controller.Capture_len > 0 && controller.Capture_pos < controller.Capture_len)
+  {
+    controller.Capture_tick = controller.Capture_tick + 1;
+    if (controller.Capture_tick >= controller.Capture_div)
+    {
+      controller.Capture_tick = 0;
+      /* Saturate rather than wrap */
+      int32_t scaled = controller.Velocity_Filter / CAPTURE_VEL_SCALE;
+      if (scaled > 32767) scaled = 32767;
+      else if (scaled < -32768) scaled = -32768;
+      Capture_vel[controller.Capture_pos] = (int16_t)scaled;
+      Capture_iq[controller.Capture_pos] = (int16_t)FOC.Iq;
+      /* The angle the ripple feedforward uses */
+      Capture_phase[controller.Capture_pos] =
+          (int16_t)((int32_t)(controller.Electric_Angle * (CPR / PI2)) & (CPR - 1));
+      controller.Capture_pos = controller.Capture_pos + 1;
+    }
+  }
+
   int c2 = micros();
   controller.execution_time = c2 - c;
 }
@@ -2257,6 +2277,36 @@ void PD_mode()
   Phase_order();
 }
 
+/// Ripple feedforward [mA]: the IN_RIPPLE slots at this loop's electrical angle.
+int32_t Ripple_ff_mA()
+{
+  uint32_t top = 0;
+  for (int s = 0; s < RIPPLE_SLOTS; s++)
+    if (Ripple_harmonic[s] > top)
+      top = Ripple_harmonic[s];
+  if (top == 0)
+    return 0;
+  /* Harmonics from the commutation's sin/cos by angle addition, in Q15 */
+  int32_t sine[RIPPLE_MAX_HARMONIC + 1];
+  int32_t cosine[RIPPLE_MAX_HARMONIC + 1];
+  sine[1] = (int32_t)(FOC.sine_value * 32767.0f);
+  cosine[1] = (int32_t)(FOC.cosine_value * 32767.0f);
+  for (uint32_t k = 2; k <= top; k++)
+  {
+    sine[k] = (sine[k - 1] * cosine[1] + cosine[k - 1] * sine[1]) >> 15;
+    cosine[k] = (cosine[k - 1] * cosine[1] - sine[k - 1] * sine[1]) >> 15;
+  }
+  int32_t sum = 0;
+  for (int s = 0; s < RIPPLE_SLOTS; s++)
+  {
+    uint32_t h = Ripple_harmonic[s];
+    if (h == 0)
+      continue;
+    sum += ((int32_t)Ripple_a[s] * cosine[h] + (int32_t)Ripple_b[s] * sine[h]) >> 15;
+  }
+  return sum;
+}
+
 /// @todo feedforwards
 /// @brief  FOC cascade velocity mode
 /// @todo add cogging comp
@@ -2280,7 +2330,7 @@ void Velocity_mode()
     PID.V_errSum = -PID.Iq_current_limit;
 
   /* Calculate Iq setpoint*/
-  PID.Iq_setpoint = PID.Kp_v * velocity_error + PID.V_errSum + PID.Feedforward_current; // + cogging_comp
+  PID.Iq_setpoint = PID.Kp_v * velocity_error + PID.V_errSum + PID.Feedforward_current + Ripple_ff_mA();
 
   /* Clamp Iq to current limit*/
 
@@ -2372,7 +2422,7 @@ void Position_mode()
     PID.V_errSum = -PID.Iq_current_limit;
 
   /* Calculate Iq setpoint*/
-  PID.Iq_setpoint = PID.Kp_v * velocity_error + PID.V_errSum + PID.Feedforward_current; // + cogging_comp
+  PID.Iq_setpoint = PID.Kp_v * velocity_error + PID.V_errSum + PID.Feedforward_current + Ripple_ff_mA();
 
   /* Clamp Iq to current limit*/
   if (PID.Iq_setpoint > PID.Iq_current_limit)

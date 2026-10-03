@@ -22,6 +22,11 @@
 #include "communication_CAN.h"
 #include "bootloader_config.h"
 
+// Capture stream progress, loop() only; channel 3 = idle.
+static uint8_t Capture_stream_channel = 3;
+static int Capture_stream_chunk = 0;
+static uint32_t Capture_stream_last_us = 0;
+
 /*
 The node with the lowest ID will always win the arbitration and therefore has the highest priority.
 */
@@ -850,6 +855,92 @@ void CAN_protocol(Stream &Serialport)
                 break;
             }
 
+            case IN_CAPTURE:{
+                if(CAN_RX_msg.type == DATA_FRAME && CAN_RX_msg.len == 3){
+                    int wanted = (CAN_RX_msg.data[1] << 8) | CAN_RX_msg.data[2];
+                    if (wanted > CAPTURE_LEN) wanted = CAPTURE_LEN;
+                    int div = CAN_RX_msg.data[0];
+                    if (div < 1) div = 1;
+                    Capture_stream_channel = 3;
+                    const uint32_t irq = __get_PRIMASK();
+                    __disable_irq();
+                    // Length last: the loop starts recording the moment it is non-zero.
+                    controller.Capture_len = 0;
+                    controller.Capture_pos = 0;
+                    controller.Capture_tick = 0;
+                    controller.Capture_div = div;
+                    controller.Capture_len = wanted;
+                    __set_PRIMASK(irq);
+                    controller.Wrong_DL = 0;
+                    controller.watchdog_reset = 1;
+                }else{
+                    controller.Wrong_DL = 1;
+                }
+                break;
+            }
+
+            case IN_RIPPLE:{
+                if(CAN_RX_msg.type == DATA_FRAME && CAN_RX_msg.len == 6 && CAN_RX_msg.data[0] < RIPPLE_SLOTS
+                   && CAN_RX_msg.data[1] <= RIPPLE_MAX_HARMONIC){
+                    uint8_t slot = CAN_RX_msg.data[0];
+                    // Harmonic last: the ISR skips a slot while it is 0.
+                    Ripple_harmonic[slot] = 0;
+                    Ripple_a[slot] = (int16_t)((CAN_RX_msg.data[2] << 8) | CAN_RX_msg.data[3]);
+                    Ripple_b[slot] = (int16_t)((CAN_RX_msg.data[4] << 8) | CAN_RX_msg.data[5]);
+                    Ripple_harmonic[slot] = CAN_RX_msg.data[1];
+                    controller.Wrong_DL = 0;
+                }else{
+                    controller.Wrong_DL = 1;
+                }
+                break;
+            }
+
+            case IN_VEL_WINDOW:{
+                if (CAN_RX_msg.type == REMOTE_FRAME){
+                    CAN_TX_msg.data[0] = Velocity_window;
+                    CAN_TX_msg.len = 1;
+                    CAN_TX_msg.type = DATA_FRAME;
+                    CAN_TX_msg.format = STANDARD_FORMAT;
+                    CAN_TX_msg.id = Combine_2_CAN_ID(controller.CAN_ID, IN_VEL_WINDOW, controller.Error);
+                    CANSend(&CAN_TX_msg);
+                    controller.watchdog_reset = 1;
+                }else if(CAN_RX_msg.len == 1){
+                    uint8_t w = CAN_RX_msg.data[0];
+                    if (w < VELOCITY_WINDOW_MIN) w = VELOCITY_WINDOW_MIN;
+                    if (w > VELOCITY_WINDOW_MAX) w = VELOCITY_WINDOW_MAX;
+                    Velocity_window = w;
+                    controller.Wrong_DL = 0;
+                }else{
+                    controller.Wrong_DL = 1;
+                }
+                break;
+            }
+
+            case IN_CAPTURE_STREAM:{
+                if(CAN_RX_msg.type == DATA_FRAME){
+                    Capture_stream_channel = 0;
+                    Capture_stream_chunk = 0;
+                    Capture_stream_last_us = micros();
+                    controller.Wrong_DL = 0;
+                    controller.watchdog_reset = 1;
+                }else{
+                    controller.Wrong_DL = 1;
+                }
+                break;
+            }
+
+            case OUT_IN_CAPTURE:{
+                if(CAN_RX_msg.type == DATA_FRAME && CAN_RX_msg.len == 3){
+                    int chunk = (CAN_RX_msg.data[1] << 8) | CAN_RX_msg.data[2];
+                    Capture_read_CAN(CAN_RX_msg.data[0], chunk);
+                    controller.Wrong_DL = 0;
+                    controller.watchdog_reset = 1;
+                }else{
+                    controller.Wrong_DL = 1;
+                }
+                break;
+            }
+
             }
         } else{
                 #if (DEBUG_COMS > 0)
@@ -1003,6 +1094,60 @@ void Voltage_CAN()
     CAN_TX_msg.id = Combine_2_CAN_ID(controller.CAN_ID, OUT_IN_VOLTAGE_CAN, controller.Error);
     CANSend(&CAN_TX_msg);
     controller.Send_heartbeat = 0;
+}
+
+/// Send the next capture stream frame if one is due and a mailbox is free.
+void Capture_stream_CAN()
+{
+    if (Capture_stream_channel > 2) return;
+    const uint32_t now = micros();
+    if (now - Capture_stream_last_us < CAPTURE_STREAM_GAP_US) return;
+    if (!(CAN1->TSR & CAN_TSR_TME0)) return;   // mailbox 0 free: the one every CANSend may use
+    const int pairs = (controller.Capture_pos + 1) / 2;
+    while (Capture_stream_chunk >= pairs)
+    {
+        Capture_stream_channel = Capture_stream_channel + 1;
+        Capture_stream_chunk = 0;
+        if (Capture_stream_channel > 2) return;
+    }
+    Capture_read_CAN(Capture_stream_channel, Capture_stream_chunk, OUT_CAPTURE_STREAM);
+    Capture_stream_chunk = Capture_stream_chunk + 1;
+    Capture_stream_last_us = now;
+}
+
+/// One capture pair, or the status for channel 0xFF.
+void Capture_read_CAN(byte channel, int chunk, uint8_t reply_cmd)
+{
+    byte data_buffer_send[2];
+    int values[3];
+    if (channel == 0xFF)
+    {
+        values[0] = controller.Capture_pos;
+        values[1] = controller.Capture_len;
+        values[2] = controller.Capture_div;
+    }
+    else
+    {
+        int16_t *samples = (channel == 0) ? Capture_vel : (channel == 1) ? Capture_iq : Capture_phase;
+        values[0] = chunk;
+        for (int k = 0; k < 2; k++)
+        {
+            int i = chunk * 2 + k;
+            values[1 + k] = (i < controller.Capture_pos) ? samples[i] : 0;
+        }
+    }
+    CAN_TX_msg.data[0] = channel;
+    for (int k = 0; k < 3; k++)
+    {
+        intTo2Bytes(values[k], data_buffer_send);
+        CAN_TX_msg.data[1 + 2 * k] = data_buffer_send[0];
+        CAN_TX_msg.data[2 + 2 * k] = data_buffer_send[1];
+    }
+    CAN_TX_msg.len = 7;
+    CAN_TX_msg.type = DATA_FRAME;
+    CAN_TX_msg.format = STANDARD_FORMAT;
+    CAN_TX_msg.id = Combine_2_CAN_ID(controller.CAN_ID, reply_cmd, controller.Error);
+    CANSend(&CAN_TX_msg);
 }
 
 

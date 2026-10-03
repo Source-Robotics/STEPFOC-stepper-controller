@@ -217,6 +217,29 @@ CAN BUS CONSTANTS
 #define IN_SETTINGS 35
 #define SETTINGS_BIT_BRAKE_COAST (1 << 0) // 1 = brake, 0 = coast (controller.brake_coast)
 
+
+// data[0] = record every Nth loop, data[1..2] = samples (BE, <= CAPTURE_LEN).
+#define IN_CAPTURE 38
+// Request: channel (0 velocity, 1 Iq, 2 electrical angle, 0xFF status), chunk (BE).
+// Reply: channel, chunk, two samples (BE int16); status: recorded, wanted, divisor.
+#define OUT_IN_CAPTURE 39
+#define CAPTURE_LEN 1024
+#define CAPTURE_VEL_SCALE 16
+// slot, harmonic (0 clears), a, b (BE int16 mA): adds a cos(h angle) + b sin(h angle).
+#define IN_RIPPLE 40
+#define RIPPLE_SLOTS 8
+#define RIPPLE_MAX_HARMONIC 16
+// data[0] = velocity moving-average length (vendor 20); RTR reads it.
+#define IN_VEL_WINDOW 41
+#define VELOCITY_WINDOW_DEFAULT 20
+#define VELOCITY_WINDOW_MIN 4
+#define VELOCITY_WINDOW_MAX 64
+// Stream every captured pair as OUT_CAPTURE_STREAM frames; own id, so they never
+// collide with an OUT_IN_CAPTURE request.
+#define IN_CAPTURE_STREAM 42
+#define OUT_CAPTURE_STREAM 43
+#define CAPTURE_STREAM_GAP_US 320
+
 // INPUT CAN command IDS (Commands that spectral driver can receive)
 // To these commands spectral responds with specific command ID
 #define IN_DATA_PACK_1 2

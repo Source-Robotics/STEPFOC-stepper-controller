@@ -35,6 +35,10 @@ typedef struct
     volatile int BATCH_DATE = 1;       // Date the batch was produced
     volatile int SOFTWARE_VERSION = 1; // Software release
     volatile bool I_AM_GRIPPER = 1;    // Is motor controller gripper (1) or not (0)
+    volatile int Capture_len = 0;      // Samples wanted by IN_CAPTURE; 0 = no capture
+    volatile int Capture_div = 1;      // Record every Nth control loop
+    volatile int Capture_pos = 0;      // Samples recorded so far
+    volatile int Capture_tick = 0;     // Loops since the last sample
     volatile int LED_ON_OFF = 1;       // Use LED for status indication
 
     volatile uint32_t interrupt_tick = 0; // Ticks of our interrupt routine
@@ -200,6 +204,13 @@ typedef struct
 } Measure;
 
 extern Measure controller;
+extern int16_t Capture_vel[CAPTURE_LEN];
+extern int16_t Capture_iq[CAPTURE_LEN];
+extern int16_t Capture_phase[CAPTURE_LEN];
+extern volatile uint8_t Velocity_window;
+extern volatile uint8_t Ripple_harmonic[RIPPLE_SLOTS];
+extern volatile int16_t Ripple_a[RIPPLE_SLOTS];
+extern volatile int16_t Ripple_b[RIPPLE_SLOTS];
 
 /// @brief Structure for FOC variables
 typedef struct

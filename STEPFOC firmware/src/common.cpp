@@ -23,6 +23,13 @@
 
 /// Global structure declaration
 Measure controller;
-_FOC FOC; 
+_FOC FOC;
+int16_t Capture_vel[CAPTURE_LEN];
+int16_t Capture_iq[CAPTURE_LEN];
+int16_t Capture_phase[CAPTURE_LEN];
+volatile uint8_t Velocity_window = VELOCITY_WINDOW_DEFAULT;
+volatile uint8_t Ripple_harmonic[RIPPLE_SLOTS];
+volatile int16_t Ripple_a[RIPPLE_SLOTS];
+volatile int16_t Ripple_b[RIPPLE_SLOTS];
 PID_par PID;
 GRIPPER_STRUCT Gripper;

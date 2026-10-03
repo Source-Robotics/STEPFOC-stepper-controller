@@ -49,6 +49,7 @@ int Get_current_mA(int adc_value);
 int Get_ADC_Value(int current_mA);
 void Position_mode();
 void Velocity_mode();
+int32_t Ripple_ff_mA();
 void Torque_mode();
 void Update_IT_callback_calib();
 void IT_callback(void);
