@@ -142,9 +142,15 @@ void CAN_protocol(Stream &Serialport)
                     uint8_t temp_buffer[] =  {CAN_RX_msg.data[0], CAN_RX_msg.data[1], CAN_RX_msg.data[2]};
                     uint8_t temp_buffer1[] =  {CAN_RX_msg.data[3], CAN_RX_msg.data[4], CAN_RX_msg.data[5]};
                     uint8_t temp_buffer2[] =  {CAN_RX_msg.data[6], CAN_RX_msg.data[7]};
-                    PID.Position_setpoint = three_bytes_to_int(temp_buffer);
-                    PID.Feedforward_speed = three_bytes_to_int(temp_buffer1);
-                    PID.Feedforward_current = two_bytes_to_int(temp_buffer2);
+                    const int position_setpoint = three_bytes_to_int(temp_buffer);
+                    const int feedforward_speed = three_bytes_to_int(temp_buffer1);
+                    const int feedforward_current = two_bytes_to_int(temp_buffer2);
+                    // One critical section, so the ISR never runs the new setpoint on the old mode.
+                    const uint32_t irq = __get_PRIMASK();
+                    __disable_irq();
+                    PID.Position_setpoint = position_setpoint;
+                    PID.Feedforward_speed = feedforward_speed;
+                    PID.Feedforward_current = feedforward_current;
 
                     if (PID.Reset_integral_accumulator == 1)
                     {
@@ -163,7 +169,11 @@ void CAN_protocol(Stream &Serialport)
                         }
                     }
                     */
+                    // The integral is stale after any other mode (wind-up from before a release); position and velocity share it.
+                    if (controller.Controller_mode != 1 && controller.Controller_mode != 2)
+                        PID.V_errSum = 0;
                     controller.Controller_mode = 1;
+                    __set_PRIMASK(irq);
                     controller.Wrong_DL = 0;
                     controller.watchdog_reset = 1;
 
@@ -180,9 +190,12 @@ void CAN_protocol(Stream &Serialport)
                 }else if(CAN_RX_msg.len == 5){
                     uint8_t temp_buffer1[] =  {CAN_RX_msg.data[0], CAN_RX_msg.data[1], CAN_RX_msg.data[2]};
                     uint8_t temp_buffer2[] =  {CAN_RX_msg.data[3], CAN_RX_msg.data[4]};
-                    PID.Velocity_setpoint = three_bytes_to_int(temp_buffer1);
-                    PID.Feedforward_current = two_bytes_to_int(temp_buffer2);
-
+                    const int velocity_setpoint = three_bytes_to_int(temp_buffer1);
+                    const int feedforward_current = two_bytes_to_int(temp_buffer2);
+                    const uint32_t irq = __get_PRIMASK();
+                    __disable_irq();
+                    PID.Velocity_setpoint = velocity_setpoint;
+                    PID.Feedforward_current = feedforward_current;
 
                     if (PID.Reset_integral_accumulator == 1)
                     {
@@ -202,7 +215,10 @@ void CAN_protocol(Stream &Serialport)
                     }
                     */
 
+                    if (controller.Controller_mode != 1 && controller.Controller_mode != 2)
+                        PID.V_errSum = 0;
                     controller.Controller_mode = 2;
+                    __set_PRIMASK(irq);
                     controller.Wrong_DL = 0;
                     controller.watchdog_reset = 1;
 
