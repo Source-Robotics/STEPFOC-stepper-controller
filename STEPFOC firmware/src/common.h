@@ -35,6 +35,7 @@ typedef struct
     volatile int BATCH_DATE = 1;       // Date the batch was produced
     volatile int SOFTWARE_VERSION = 1; // Software release
     volatile bool I_AM_GRIPPER = 1;    // Is motor controller gripper (1) or not (0)
+    volatile int GRIPPER_ID = 0;       // Which gripper this drive is built into (0 = not set), see IN_GRIPPER_ID
     volatile int LED_ON_OFF = 1;       // Use LED for status indication
 
     volatile uint32_t interrupt_tick = 0; // Ticks of our interrupt routine

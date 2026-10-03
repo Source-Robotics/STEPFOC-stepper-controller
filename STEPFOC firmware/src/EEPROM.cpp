@@ -255,6 +255,9 @@ static void Load_settings_from_eeprom()
   controller.watchdog_action = readInt(WATCHDOG_ACTION_EEPROM);
   controller.Heartbeat_rate_ms = readInt(HEARTBEAT_RATE_EEPROM);
   controller.I_AM_GRIPPER = readInt(I_AM_GRIPPER_EEPROM);
+  // An unwritten cell reads -1.
+  int gripper_id = readInt(GRIPPER_ID_EEPROM);
+  controller.GRIPPER_ID = (gripper_id < 0 || gripper_id > 255) ? 0 : gripper_id;
   PID.Reset_integral_accumulator = readInt(RESET_INTEGRAL_EEPROM);
   controller.Max_temperature = readInt(TEMPERATURE_ERROR);
   controller.Max_Vbus = readInt(VOLTAGE_ERROR);
@@ -377,6 +380,7 @@ void Write_config()
   writeInt(HEARTBEAT_RATE_EEPROM,controller.Heartbeat_rate_ms);
 
   writeInt(I_AM_GRIPPER_EEPROM,controller.I_AM_GRIPPER);
+  writeInt(GRIPPER_ID_EEPROM,controller.GRIPPER_ID);
   writeInt(RESET_INTEGRAL_EEPROM,PID.Reset_integral_accumulator);
 
   writeInt(TEMPERATURE_ERROR,controller.Max_temperature);
@@ -442,6 +446,7 @@ static void Set_Default_settings_block()
   writeInt(WATCHDOG_ACTION_EEPROM, 0);
   writeInt(HEARTBEAT_RATE_EEPROM, 0);
   writeInt(I_AM_GRIPPER_EEPROM, 0);
+  writeInt(GRIPPER_ID_EEPROM, 0);
   writeInt(RESET_INTEGRAL_EEPROM, 0);
   writeInt(TEMPERATURE_ERROR, 75);
   writeInt(VOLTAGE_ERROR, 29000);

@@ -166,6 +166,9 @@ EEPROM CONSTANTS
 #define CALIB_RESERVED_I2_EEPROM 232     // unused int, reserved for a future feature
 #define CALIB_FEATURE_FLAGS_EEPROM 236   // unused bitmask int, reserved for future "is configured" flags
 
+// Gripper id; outside both CRC blocks so older drives keep their CRC.
+#define GRIPPER_ID_EEPROM 240
+
 /*
 CAN BUS CONSTANTS
 */
@@ -217,6 +220,11 @@ CAN BUS CONSTANTS
 #define IN_SETTINGS 35
 #define SETTINGS_BIT_BRAKE_COAST (1 << 0) // 1 = brake, 0 = coast (controller.brake_coast)
 
+// data[0] = gripper id (0 = not set); saved by IN_SAVE_CONFIG, reported in device info byte 7.
+#define IN_GRIPPER_ID 36
+
+// RTR; reply: temperature, Vbus mV, error flags (2 bytes), Iq mA.
+#define OUT_IN_TELEMETRY 37
 // INPUT CAN command IDS (Commands that spectral driver can receive)
 // To these commands spectral responds with specific command ID
 #define IN_DATA_PACK_1 2

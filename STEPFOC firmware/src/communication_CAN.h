@@ -81,6 +81,8 @@ void Current_data_CAN();
 
 void State_of_Errors_CAN();
 
+void Telemetry_CAN();
+void Config_readback_CAN(uint8_t cmd);
 void Data_pack_1_CAN();
 
 void Data_pack_2_CAN();

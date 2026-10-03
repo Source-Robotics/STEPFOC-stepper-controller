@@ -453,7 +453,10 @@ void CAN_protocol(Stream &Serialport)
             }
 
             case IN_WATCHDOG_TIMEOUT:{
-                if(CAN_RX_msg.len == 5){
+                if (CAN_RX_msg.type == REMOTE_FRAME){
+                    Config_readback_CAN(IN_WATCHDOG_TIMEOUT);
+                    controller.watchdog_reset = 1;
+                }else if(CAN_RX_msg.len == 5){
                     uint8_t temp_buffer[] =  {CAN_RX_msg.data[0], CAN_RX_msg.data[1], CAN_RX_msg.data[2], CAN_RX_msg.data[3]};
                     controller.watchdog_time_ms = fourBytesToInt(temp_buffer);
                     controller.watchdog_action = CAN_RX_msg.data[4];
@@ -566,7 +569,10 @@ void CAN_protocol(Stream &Serialport)
             }
                 
             case IN_KP_KD:{
-                if(CAN_RX_msg.len == 8){
+                if (CAN_RX_msg.type == REMOTE_FRAME){
+                    Config_readback_CAN(IN_KP_KD);
+                    controller.watchdog_reset = 1;
+                }else if(CAN_RX_msg.len == 8){
                     uint8_t temp_buffer[] =  {CAN_RX_msg.data[0], CAN_RX_msg.data[1], CAN_RX_msg.data[2], CAN_RX_msg.data[3]};
                     uint8_t temp_buffer2[] =  {CAN_RX_msg.data[4], CAN_RX_msg.data[5], CAN_RX_msg.data[6], CAN_RX_msg.data[7]};
                     PID.KP = fourBytesToFloat(temp_buffer);
@@ -588,7 +594,10 @@ void CAN_protocol(Stream &Serialport)
             }
 
             case IN_KIIQ_KPIQ:{
-                if(CAN_RX_msg.len == 8){
+                if (CAN_RX_msg.type == REMOTE_FRAME){
+                    Config_readback_CAN(IN_KIIQ_KPIQ);
+                    controller.watchdog_reset = 1;
+                }else if(CAN_RX_msg.len == 8){
                     uint8_t temp_buffer[] =  {CAN_RX_msg.data[0], CAN_RX_msg.data[1], CAN_RX_msg.data[2], CAN_RX_msg.data[3]};
                     uint8_t temp_buffer2[] =  {CAN_RX_msg.data[4], CAN_RX_msg.data[5], CAN_RX_msg.data[6], CAN_RX_msg.data[7]};
                     PID.Kp_iq = fourBytesToFloat(temp_buffer);
@@ -610,7 +619,10 @@ void CAN_protocol(Stream &Serialport)
             }
 
             case IN_KPV_KIV:{
-                if(CAN_RX_msg.len == 8){
+                if (CAN_RX_msg.type == REMOTE_FRAME){
+                    Config_readback_CAN(IN_KPV_KIV);
+                    controller.watchdog_reset = 1;
+                }else if(CAN_RX_msg.len == 8){
                     uint8_t temp_buffer[] =  {CAN_RX_msg.data[0], CAN_RX_msg.data[1], CAN_RX_msg.data[2], CAN_RX_msg.data[3]};
                     uint8_t temp_buffer2[] =  {CAN_RX_msg.data[4], CAN_RX_msg.data[5], CAN_RX_msg.data[6], CAN_RX_msg.data[7]};
                     PID.Kp_v = fourBytesToFloat(temp_buffer);
@@ -632,7 +644,10 @@ void CAN_protocol(Stream &Serialport)
             }
 
             case IN_KPP:{
-                if(CAN_RX_msg.len == 4){
+                if (CAN_RX_msg.type == REMOTE_FRAME){
+                    Config_readback_CAN(IN_KPP);
+                    controller.watchdog_reset = 1;
+                }else if(CAN_RX_msg.len == 4){
                     uint8_t temp_buffer[] =  {CAN_RX_msg.data[0], CAN_RX_msg.data[1], CAN_RX_msg.data[2], CAN_RX_msg.data[3]};
                     PID.Kp_p = fourBytesToFloat(temp_buffer);
                     controller.Wrong_DL = 0;
@@ -650,7 +665,10 @@ void CAN_protocol(Stream &Serialport)
             }
 
             case IN_LIMITS:{
-                if(CAN_RX_msg.len == 8){
+                if (CAN_RX_msg.type == REMOTE_FRAME){
+                    Config_readback_CAN(IN_LIMITS);
+                    controller.watchdog_reset = 1;
+                }else if(CAN_RX_msg.len == 8){
                     uint8_t temp_buffer[] =  {CAN_RX_msg.data[0], CAN_RX_msg.data[1], CAN_RX_msg.data[2], CAN_RX_msg.data[3]};
                     uint8_t temp_buffer2[] =  {CAN_RX_msg.data[4], CAN_RX_msg.data[5], CAN_RX_msg.data[6], CAN_RX_msg.data[7]};
                     PID.Velocity_limit = fourBytesToFloat(temp_buffer);
@@ -673,7 +691,10 @@ void CAN_protocol(Stream &Serialport)
             }
 
             case IN_VLIM:{
-                if(CAN_RX_msg.len == 4){
+                if (CAN_RX_msg.type == REMOTE_FRAME){
+                    Config_readback_CAN(IN_VLIM);
+                    controller.watchdog_reset = 1;
+                }else if(CAN_RX_msg.len == 4){
                     uint8_t temp_buffer[] =  {CAN_RX_msg.data[0], CAN_RX_msg.data[1], CAN_RX_msg.data[2], CAN_RX_msg.data[3]};
                     PID.Voltage_limit = fourBytesToInt(temp_buffer);
                     controller.Wrong_DL = 0;
@@ -850,6 +871,35 @@ void CAN_protocol(Stream &Serialport)
                 break;
             }
 
+            case OUT_IN_TELEMETRY:{
+                #if (DEBUG_COMS > 0)
+                Serialport.println("Telemetry request");
+                #endif
+                if (CAN_RX_msg.type == REMOTE_FRAME)
+                {
+                    Telemetry_CAN();
+                    controller.watchdog_reset = 1;
+                }
+                break;
+            }
+
+            case IN_GRIPPER_ID:{
+                if(CAN_RX_msg.type == DATA_FRAME && CAN_RX_msg.len == 1){
+                    controller.GRIPPER_ID = CAN_RX_msg.data[0];
+                    controller.Wrong_DL = 0;
+                    #if (DEBUG_COMS > 0)
+                    Serialport.print("New gripper id is: ");
+                    Serialport.println(controller.GRIPPER_ID);
+                    #endif
+                }else{
+                    #if (DEBUG_COMS > 0)
+                    Serialport.println("GRIPPER_ID; Wrong DL");
+                    #endif
+                    controller.Wrong_DL = 1;
+                }
+                break;
+            }
+
             }
         } else{
                 #if (DEBUG_COMS > 0)
@@ -1019,11 +1069,47 @@ void Device_info_CAN()
     CAN_TX_msg.data[4] = data_buffer_send[1];
     CAN_TX_msg.data[5] = data_buffer_send[2];
     CAN_TX_msg.data[6] = data_buffer_send[3];
-    CAN_TX_msg.data[7] = 0x00;
-    CAN_TX_msg.len = 7;
+    CAN_TX_msg.data[7] = controller.GRIPPER_ID;
+    CAN_TX_msg.len = 8;
     CAN_TX_msg.type = DATA_FRAME;
     CAN_TX_msg.format = STANDARD_FORMAT;
     CAN_TX_msg.id = Combine_2_CAN_ID(controller.CAN_ID, OUT_IN_DEVICE_INFO_CAN, controller.Error);
+    CANSend(&CAN_TX_msg);
+    controller.Send_heartbeat = 0;
+}
+
+/// @brief Send temperature, Vbus, error flags and Iq in one frame (8 byte)
+/// Direction Driver -> host
+void Telemetry_CAN()
+{
+    byte data_buffer_send[2];
+    // One snapshot, so the fields and the error bit agree.
+    const uint32_t irq = __get_PRIMASK();
+    __disable_irq();
+    const int temp_deg = controller.TEMP_DEG;
+    const int vbus_mv = controller.VBUS_mV;
+    const int iq_ma = (int)FOC.Iq;
+    const bool error = controller.Error;
+    bool Error_array[] = {controller.Error, controller.temperature_error, controller.encoder_error,
+                          controller.Vbus_error, controller.Driver_error, controller.Velocity_error,
+                          controller.Current_error, controller.ESTOP_error};
+    bool Error_array2[] = {controller.Calibrated, controller.Activated, controller.Watchdog_error, 0, 0, 0, 0, 0};
+    __set_PRIMASK(irq);
+    intTo2Bytes(temp_deg, data_buffer_send);
+    CAN_TX_msg.data[0] = data_buffer_send[0];
+    CAN_TX_msg.data[1] = data_buffer_send[1];
+    intTo2Bytes(vbus_mv, data_buffer_send);
+    CAN_TX_msg.data[2] = data_buffer_send[0];
+    CAN_TX_msg.data[3] = data_buffer_send[1];
+    CAN_TX_msg.data[4] = bitsToByte(Error_array);
+    CAN_TX_msg.data[5] = bitsToByte(Error_array2);
+    intTo2Bytes(iq_ma, data_buffer_send);
+    CAN_TX_msg.data[6] = data_buffer_send[0];
+    CAN_TX_msg.data[7] = data_buffer_send[1];
+    CAN_TX_msg.len = 8;
+    CAN_TX_msg.type = DATA_FRAME;
+    CAN_TX_msg.format = STANDARD_FORMAT;
+    CAN_TX_msg.id = Combine_2_CAN_ID(controller.CAN_ID, OUT_IN_TELEMETRY, error);
     CANSend(&CAN_TX_msg);
     controller.Send_heartbeat = 0;
 }
@@ -1090,6 +1176,69 @@ void KT_data_CAN()
     CAN_TX_msg.id = Combine_2_CAN_ID(controller.CAN_ID, OUT_IN_KT, controller.Error);
     CANSend(&CAN_TX_msg);
     controller.Send_heartbeat = 0;
+}
+
+/// Big-endian float, the byte order fourBytesToFloat reads.
+static void Put_float_CAN(uint8_t *at, float value)
+{
+    union { float f; uint32_t i; } data;
+    data.f = value;
+    at[0] = (data.i >> 24) & 0xFF;
+    at[1] = (data.i >> 16) & 0xFF;
+    at[2] = (data.i >> 8) & 0xFF;
+    at[3] = data.i & 0xFF;
+}
+
+/// Answer a REMOTE_FRAME on a config command with the values in force.
+void Config_readback_CAN(uint8_t cmd)
+{
+    byte four[4];
+    switch (cmd)
+    {
+    case IN_KP_KD:
+        Put_float_CAN(&CAN_TX_msg.data[0], PID.KP);
+        Put_float_CAN(&CAN_TX_msg.data[4], PID.KD);
+        CAN_TX_msg.len = 8;
+        break;
+    case IN_KIIQ_KPIQ:
+        Put_float_CAN(&CAN_TX_msg.data[0], PID.Kp_iq);
+        Put_float_CAN(&CAN_TX_msg.data[4], PID.Ki_iq);
+        CAN_TX_msg.len = 8;
+        break;
+    case IN_KPV_KIV:
+        Put_float_CAN(&CAN_TX_msg.data[0], PID.Kp_v);
+        Put_float_CAN(&CAN_TX_msg.data[4], PID.Ki_v);
+        CAN_TX_msg.len = 8;
+        break;
+    case IN_KPP:
+        Put_float_CAN(&CAN_TX_msg.data[0], PID.Kp_p);
+        CAN_TX_msg.len = 4;
+        break;
+    case IN_LIMITS:
+        Put_float_CAN(&CAN_TX_msg.data[0], PID.Velocity_limit);
+        Put_float_CAN(&CAN_TX_msg.data[4], PID.Iq_current_limit);
+        CAN_TX_msg.len = 8;
+        break;
+    case IN_VLIM:
+        intTo4Bytes(PID.Voltage_limit, four);
+        for (int k = 0; k < 4; k++)
+            CAN_TX_msg.data[k] = four[k];
+        CAN_TX_msg.len = 4;
+        break;
+    case IN_WATCHDOG_TIMEOUT:
+        intTo4Bytes(controller.watchdog_time_ms, four);
+        for (int k = 0; k < 4; k++)
+            CAN_TX_msg.data[k] = four[k];
+        CAN_TX_msg.data[4] = controller.watchdog_action;
+        CAN_TX_msg.len = 5;
+        break;
+    default:
+        return;
+    }
+    CAN_TX_msg.type = DATA_FRAME;
+    CAN_TX_msg.format = STANDARD_FORMAT;
+    CAN_TX_msg.id = Combine_2_CAN_ID(controller.CAN_ID, cmd, controller.Error);
+    CANSend(&CAN_TX_msg);
 }
 
 /// @brief  Send state of all errors in motor driver (2 byte)
