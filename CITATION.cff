@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use STEPFOC in your work, please cite it as below."
+title: "STEPFOC: closed-loop FOC stepper motor driver"
+type: software
+authors:
+  - name: Source Robotics
+    website: https://source-robotics.com
+  - given-names: Petar
+    family-names: Crnjak
+abstract: "A field-oriented control driver that turns stepper motors into closed-loop servos, with a 14-bit magnetic encoder, CAN and UART, and open-source firmware."
+version: V108
+date-released: 2026-08-26
+repository-code: https://github.com/Source-Robotics/STEPFOC-stepper-controller
+url: https://docs.source-robotics.com/STEPFOC-docs/
+license: GPL-3.0
+keywords:
+  - motor driver
+  - stepper motor
+  - field-oriented control
+  - FOC
+  - closed loop
+  - CAN bus
+  - STM32
+  - robotics
