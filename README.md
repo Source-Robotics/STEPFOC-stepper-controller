@@ -1,7 +1,7 @@
 # STEPFOC Stepper controller
 
 
-[![License: GPLv3](https://img.shields.io/badge/license-GPLv3-blue)](https://opensource.org/license/gpl-3-0/) ![Issues](https://img.shields.io/github/issues/PCrnjak/STEPFOC-stepper-controller) ![release](https://img.shields.io/github/v/release/PCrnjak/STEPFOC-stepper-controller)
+[![License: GPLv3](https://img.shields.io/badge/license-GPLv3-blue)](https://opensource.org/license/gpl-3-0/) ![Issues](https://img.shields.io/github/issues/Source-Robotics/STEPFOC-stepper-controller) ![release](https://img.shields.io/github/v/release/Source-Robotics/STEPFOC-stepper-controller)
 
 <img src="Photos/STEPFOC PCB.png" alt="drawing" width="5000"/>
 
@@ -25,20 +25,20 @@ You can buy the STEPFOC stepper controller here: <br />
  https://source-robotics.com/products/stepfoc-stepper-controller
 
 ## 💾Firmware 
-STEPFOC firmware is located [here](https://github.com/PCrnjak/STEPFOC-stepper-controller/tree/main/STEPFOC%20firmware). To install it follow [this guide!](https://source-robotics.github.io/STEPFOC-docs/flashing_firmware/)
+STEPFOC firmware is located [here](https://github.com/Source-Robotics/STEPFOC-stepper-controller/tree/main/STEPFOC%20firmware). To install it follow [this guide!](https://docs.source-robotics.com/STEPFOC-docs/latest/07-firmware/update/)
 
 
 ## 📚Documentation:
 
 - [Motor hardware setup guide](https://youtu.be/60UMc95H8iE)
 - [Official website](https://source-robotics.com/products/spectral-micro-bldc-controller)
-- [DOCS](https://source-robotics.github.io/STEPFOC-docs/) Offers great starting guides with project examples + code 
+- [DOCS](https://docs.source-robotics.com/STEPFOC-docs/) Offers great starting guides with project examples + code 
 
 
 ### API and control
-- [GUI software ](https://github.com/PCrnjak/Spectral-motor-GUI)
-- [Python API & Examples](https://github.com/PCrnjak/Spectral-BLDC-Python/tree/main)
-- [Source Robotics toolbox](https://github.com/PCrnjak/Source-Robotics-Toolbox/tree/main) 
+- [GUI software ](https://github.com/Source-Robotics/Spectral-motor-GUI)
+- [Python API & Examples](https://github.com/Source-Robotics/Spectral-BLDC-Python/tree/main)
+- [Source Robotics toolbox](https://github.com/Source-Robotics/Source-Robotics-Toolbox/tree/main) 
 
 ## 🌐 More about STEPFOC drivers
 
@@ -49,7 +49,7 @@ STEPFOC firmware is located [here](https://github.com/PCrnjak/STEPFOC-stepper-co
 
 | Discord | Forum | Hackaday | Blog |
 |--------|-------|------| ------|
-| [![Discord](https://img.shields.io/badge/Discord-5865F2?logo=discord&logoColor=white)](https://discord.com/invite/prjUvjmGpZ) | [![Forum](https://img.shields.io/badge/Forum-0A0A0A)](https://discourse.source-robotics.com/) | [![Hackaday](https://img.shields.io/badge/Hackaday-000000?logo=hackaday&logoColor=white)](https://hackaday.io/project/191860-parol6-desktop-robotic-arm) | [![Blog](https://img.shields.io/badge/Blog-Source%20Robotics-blue)](https://source-robotics.com/blogs/blog) 
+| [![Discord](https://img.shields.io/badge/Discord-5865F2?logo=discord&logoColor=white)](https://discord.com/invite/prjUvjmGpZ) | [![Discussions](https://img.shields.io/badge/Discussions-0A0A0A?logo=github)](https://github.com/orgs/Source-Robotics/discussions) | [![Hackaday](https://img.shields.io/badge/Hackaday-000000?logo=hackaday&logoColor=white)](https://hackaday.io/project/191860-parol6-desktop-robotic-arm) | [![Blog](https://img.shields.io/badge/Blog-Source%20Robotics-blue)](https://source-robotics.com/blogs/blog) 
 
 
 
