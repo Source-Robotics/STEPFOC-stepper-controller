@@ -227,6 +227,8 @@ void inverse_park_transform(float d, float q, volatile float *a, volatile float 
 
     FOC.Ud = d; // as asked, for the capture (signals 17, 18)
     FOC.Uq = q;
+    d += FOC.sound_d; // the sound (batch 22), on top of what the loops ask
+    q += FOC.sound_q;
     float dr = d; // rotated forward by speed x delay (parameter 64); not at all below COMM_DELAY_MIN_SPEED
     float qr = q;
     const float ds = FOC.delay_s;
