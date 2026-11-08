@@ -662,8 +662,8 @@ static void Set_Default_settings_block()
   writeInt(VOLTAGE_ERROR, 29000);
   writeInt(VOLTAGE_LIMIT, 6000);
   writeFloat(KPP_EEPROM, 5);
-  writeFloat(KPV_EEPROM, 0.007);
-  writeFloat(KIV_EEPROM, 0.0005);
+  writeFloat(KPV_EEPROM, 0.02);  // the bench defaults (2026-11-08), as common.h
+  writeFloat(KIV_EEPROM, 0.001);
   writeFloat(VELOCITY_LIMIT_EEPROM, 800000);
   writeFloat(KP_EEPROM, 0.1400);
   writeFloat(KD_EEPROM, 0.0028);
