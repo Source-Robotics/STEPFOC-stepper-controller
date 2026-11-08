@@ -97,7 +97,29 @@ void ADC_CHANNEL_6_SELECT_SENSE1(void){
 /// @brief 
 /// @param  
 /// @return 
+/// The fast reading (batch 15, parameter 71): the channel straight into SQR3, a software start, wait for the end of
+/// the conversion, read DR. The HAL path reconfigures the channel and polls with a tick timeout on every read.
+volatile uint8_t adc_fast_on = 0;
+
+/// @brief The sample times the HAL path sets, 28.5 cycles, on channels 4 (Vbus), 6 and 8 (the currents).
+void ADC_fast_prepare(void)
+{
+  ADC1->SMPR2 = (ADC1->SMPR2 & ~((7u << 12) | (7u << 18) | (7u << 24))) | (3u << 12) | (3u << 18) | (3u << 24);
+}
+
+static inline int adc_fast(uint32_t channel)
+{
+  ADC1->SQR3 = channel;
+  ADC1->CR2 |= (ADC_CR2_SWSTART | ADC_CR2_EXTTRIG);
+  for (uint32_t n = 0; !(ADC1->SR & ADC_SR_EOC); n++)
+    if (n > 4000u) // about 200 us: never hang the control loop on a stopped ADC
+      break;
+  return (int)(ADC1->DR & 0xFFFu); // reading DR clears EOC
+}
+
 int ADC_CHANNEL_6_READ_SENSE1(void){
+  if (adc_fast_on)
+    return adc_fast(ADC_CHANNEL_6);
 
   ADC_CHANNEL_6_SELECT_SENSE1();
   // Read selected ADC channel
@@ -126,6 +148,8 @@ void ADC_CHANNEL_8_SELECT_SENSE2(void){
 /// @param  
 /// @return 
 int ADC_CHANNEL_8_READ_SENSE2(void){
+  if (adc_fast_on)
+    return adc_fast(ADC_CHANNEL_8);
 
   ADC_CHANNEL_8_SELECT_SENSE2();
   // Read selected ADC channel
@@ -154,6 +178,8 @@ void ADC_CHANNEL_4_SELECT_VBUS(void){
 /// @param  
 /// @return 
 int ADC_CHANNEL_4_READ_VBUS(void){
+  if (adc_fast_on)
+    return adc_fast(ADC_CHANNEL_4);
 
   ADC_CHANNEL_4_SELECT_VBUS();
   // Read selected ADC channel

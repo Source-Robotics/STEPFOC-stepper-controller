@@ -26,6 +26,8 @@
 #include "iodefs.h"
 #include "stm32f1xx_hal.h"
 
+extern volatile uint8_t pwm_fast_on; // parameter 72: pwm_set writes the compare register itself
+
 HardwareTimer* pwm_high(int ulPin, uint32_t PWM_freq);
 HardwareTimer* pwm_freq(int ulPin, uint32_t PWM_freq, void (*int_callback)());
 HardwareTimer* pwm_freq_2(int ulPin, uint32_t PWM_freq, void (*int_callback)());

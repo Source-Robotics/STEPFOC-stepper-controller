@@ -36,6 +36,8 @@ void MX_ADC1_Init(void);
 
 void ADC_CHANNEL_6_SELECT_SENSE1(void);
 int ADC_CHANNEL_6_READ_SENSE1(void);
+extern volatile uint8_t adc_fast_on; // parameter 71: the register path for the ADC reads and the encoder's SPI
+void ADC_fast_prepare(void);         // the sample times the register path needs
 
 void ADC_CHANNEL_8_SELECT_SENSE2(void);
 int ADC_CHANNEL_8_READ_SENSE2(void);

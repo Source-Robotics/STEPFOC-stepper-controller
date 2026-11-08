@@ -169,7 +169,12 @@ struct PwmPinCache
   int pin = -1;
   HardwareTimer *tmr = nullptr;
   uint32_t channel = 0;
+  volatile uint32_t *ccr = nullptr; // the channel's compare register (the fast path, parameter 72)
+  uint32_t arr1 = 0;                // the timer's ARR + 1
 };
+
+/// Parameter 72 (batch 15): pwm_set writes the compare register itself instead of calling setCaptureCompare.
+volatile uint8_t pwm_fast_on = 0;
 
 static PwmPinCache pwm_cache[4];
 
@@ -198,6 +203,11 @@ void pwm_set(int ulPin, uint32_t value, int resolution)
   {
     if (pwm_cache[i].pin == ulPin)
     {
+      if (pwm_fast_on && pwm_cache[i].ccr != nullptr)
+      {
+        *pwm_cache[i].ccr = (value * pwm_cache[i].arr1) >> resolution; // what setCaptureCompare computes
+        return;
+      }
       pwm_cache[i].tmr->setCaptureCompare(pwm_cache[i].channel, value, (TimerCompareFormat_t)resolution);
       return;
     }
@@ -215,6 +225,9 @@ void pwm_set(int ulPin, uint32_t value, int resolution)
       pwm_cache[i].pin = ulPin;
       pwm_cache[i].tmr = tmr;
       pwm_cache[i].channel = channel;
+      TIM_TypeDef *timx = tmr->getHandle()->Instance;
+      pwm_cache[i].ccr = &timx->CCR1 + (channel - 1); // CCR1..CCR4 are consecutive
+      pwm_cache[i].arr1 = timx->ARR + 1;
 
       tmr->setCaptureCompare(channel, value, (TimerCompareFormat_t)resolution);
       return;

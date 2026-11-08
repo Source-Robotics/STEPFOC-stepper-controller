@@ -21,6 +21,8 @@
 /* Includes ------------------------------------------------------------------*/
 
 #include "utils.h"
+#include "common.h"
+#include "cogging.h"
 #include <Arduino.h>
 #include <stdio.h>
 #include "iodefs.h"
@@ -190,8 +192,17 @@ void dq0(float theta, float a, float b, float c, float *d, float *q){
 /// @brief Calculates sine and cosine of theta (used for park calc)
 /// @param theta Electrical angle
 void sine_cosine_calc(float theta){
-    FOC.sine_value = qfp_fsin(theta);
-    FOC.cosine_value = qfp_fcos(theta);
+    if (controller.fast_trig) // the integer quarter-wave table (cogging.cpp), 16384 steps per turn (parameter 65)
+    {
+        const int32_t a = (int32_t)(theta * 2607.5945f);
+        FOC.sine_value = (float)Cogging_sin_q15((uint32_t)a) * 3.0517578e-5f;
+        FOC.cosine_value = (float)Cogging_sin_q15((uint32_t)a + 4096) * 3.0517578e-5f;
+    }
+    else
+    {
+        FOC.sine_value = qfp_fsin(theta);
+        FOC.cosine_value = qfp_fcos(theta);
+    }
 }
 
 /// @brief Used to get Iq and Id from Ia and Ib
@@ -214,8 +225,19 @@ void park_transform(int a, int b, volatile float *d,volatile  float *q){
 /// @param b Output Ub
 void inverse_park_transform(float d, float q, volatile float *a, volatile float *b){
 
-    *a = d * FOC.cosine_value  - q * FOC.sine_value;
-    *b = q * FOC.cosine_value + d * FOC.sine_value;
+    FOC.Ud = d; // as asked, for the capture (signals 17, 18)
+    FOC.Uq = q;
+    float dr = d; // rotated forward by speed x delay (parameter 64); not at all below COMM_DELAY_MIN_SPEED
+    float qr = q;
+    const float ds = FOC.delay_s;
+    if (ds != 0.0f)
+    {
+      const float dc = FOC.delay_c;
+      dr = d * dc - q * ds;
+      qr = d * ds + q * dc;
+    }
+    *a = dr * FOC.cosine_value  - qr * FOC.sine_value;
+    *b = qr * FOC.cosine_value + dr * FOC.sine_value;
 
 }
 

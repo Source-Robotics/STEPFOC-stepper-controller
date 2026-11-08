@@ -18,6 +18,9 @@
 #include "EEPROM.h"
 #include "CAN.h"
 #include "communication_CAN.h"
+#include "scope.h"
+#include "cogcal.h"
+#include "encal.h"
 #include "bootloader_config.h"
 #include <IWatchdog.h>
 
@@ -62,7 +65,19 @@ void setup()
   digitalWrite(EEPROM_WP, LOW);
   Init_EEPROM();
   // Write_config();
+  // Product lock: on the other product's board, read and write nothing more, drive no pin, start no control loop
+  // and no hardware watchdog; stay addressable over CAN and UART so the right firmware can be flashed.
+  if (Product_board_is_other())
+  {
+    controller.wrong_product = 1;
+    controller.Error = 1;
+    controller.Calibrated = 0; // it read no calibration (STEPFOC's RAM default is 1)
+    Load_can_id_only();
+    Setup_CAN_bus();
+    return;
+  }
   read_config();
+  Product_stamp_at_boot();
   delay(100);
 
   // Begin PWM 50000 = 25Khz -> center aligned
@@ -73,9 +88,16 @@ void setup()
   MyTim2 = pwm_high(PWM_CH3, PWM_FREQ * 2);
   MyTim2 = pwm_high(PWM_CH4, PWM_FREQ * 2);
   pwm_align(MyTim2);
+  Loop_profile_begin(); // the cycle counter for the section timing (parameters 66-70)
+  Sense_zero_calibrate();
 
   // Get initial encoder value!
   Get_first_encoder();
+  // The register fast paths (parameters 71, 72) on by default (batch 16, bench 2026-11-08: 19 us less per loop,
+  // the same current noise), now that the HAL has switched the ADC and the SPI on above.
+  ADC_fast_prepare();
+  adc_fast_on = 1;
+  pwm_fast_on = 1;
 
   // Collect data before entering the ISR
   // This fixes velocity error
@@ -146,5 +168,8 @@ void loop()
     CAN_protocol(Serial);
     CAN_heartbeat(ms);
     CAN_watchdog(ms);
+    Scope_pump();
   }
+  Encal_run();  // the encoder table on the drive, when started (also after a calibration, parameter 56)
+  Cogcal_run(); // on-drive anti-cogging identification, when started
 }
