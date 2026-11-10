@@ -6,7 +6,8 @@ Which firmware your STEPFOC runs, and which release, bootloader and manual go wi
 
 | Release | Date | What it is | Bootloader | Files |
 |---|---|---|---|---|
-| **V108** | 2026-08-26 | fixes `#Cal` failing with *Phase order is wrong!* on healthy motors | required | [download](https://github.com/Source-Robotics/STEPFOC-stepper-controller/releases/tag/V108) |
+| **V109** | 2026-11-10 | parameters by number, captures, the watchdog's actions, sound, the encoder table and anti-cogging measured on the driver; the alignment lock fits small motors; the current-sense zero waits for the supply | required | [download](https://github.com/Source-Robotics/STEPFOC-stepper-controller/releases/tag/V109) |
+| V108 | 2026-08-26 | fixes `#Cal` failing with *Phase order is wrong!* on healthy motors | required | [download](https://github.com/Source-Robotics/STEPFOC-stepper-controller/releases/tag/V108) |
 | V107 | 2026-08-24 | fixes the KD term of PD mode over CAN; brake or coast over CAN | required | [download](https://github.com/Source-Robotics/STEPFOC-stepper-controller/releases/tag/V107) |
 | V106 | 2026-07-05 | no dropped CAN bursts, a watchdog, a CRC-checked configuration | required | [download](https://github.com/Source-Robotics/STEPFOC-stepper-controller/releases/tag/V106) |
 | V105 | 2026-07-04 | the first for the bootloader; reversed phase wiring calibrates | required | [download](https://github.com/Source-Robotics/STEPFOC-stepper-controller/releases/tag/V105) |
@@ -17,7 +18,8 @@ Which firmware your STEPFOC runs, and which release, bootloader and manual go wi
 Releases from V105 on are built from the `bootloader-version` branch and carry the image
 `stepfoc-firmware-V<number>.bin` with its `firmware.json`; the release notes are the changelog.
 
-The manual has a version for [108](https://docs.source-robotics.com/STEPFOC-docs/latest/) (latest) and one for
+The manual has a version for [109](https://docs.source-robotics.com/STEPFOC-docs/latest/) (latest), one for
+[108](https://docs.source-robotics.com/STEPFOC-docs/108/) and one for
 [103](https://docs.source-robotics.com/STEPFOC-docs/103/); 105 to 107 have none of their own. The selector in the
 manual's header switches between them.
 
