@@ -27,7 +27,7 @@
 
 | **12 to 29 V** | **1.5 A** | **14-bit** | **CAN + UART** | **39 × 39 mm** |
 |:-:|:-:|:-:|:-:|:-:|
-| supply voltage | phase current, 2.8 A max. | magnetic encoder | interfaces | NEMA 17 holes, 8 g |
+| supply voltage | motor current, 2.8 A max | encoder | interfaces | NEMA 17 size, 8 g |
 
 </div>
 
@@ -67,7 +67,8 @@ and Motor GUI. Some pictures in the manual show the Spectral Micro; the procedur
 | **Update the firmware** | [Updating through the bootloader](https://docs.source-robotics.com/STEPFOC-docs/latest/07-firmware/update/) · [latest release](https://github.com/Source-Robotics/STEPFOC-stepper-controller/releases/latest) · [a board without the bootloader](https://docs.source-robotics.com/STEPFOC-docs/latest/07-firmware/bootloader/) |
 | **Use it in a gripper or robot** | [gripper mode](https://docs.source-robotics.com/STEPFOC-docs/latest/06-operation/gripper-mode/) · [MSG gripper](https://docs.source-robotics.com/MSG-gripper-docs/) · [PAR6 robot arm](https://docs.source-robotics.com/par6/) · [guides with code](https://docs.source-robotics.com/STEPFOC-docs/latest/guides/) |
 
-## In this repository
+<details>
+<summary><b>What is in this repository</b></summary>
 
 | Folder | What is in it |
 |---|---|
@@ -81,6 +82,8 @@ image and its `firmware.json` as ready downloads; Motor GUI fetches, checks and 
 folders: [`STEPFOC firmware.zip`](STEPFOC%20firmware.zip), the release 103 firmware folder as one download, and
 [`en.stsw-link009.zip`](en.stsw-link009.zip), the ST-LINK USB driver for Windows (STSW-LINK009) for the programming
 adapter.
+
+</details>
 
 ## Community
 
