@@ -29,6 +29,13 @@ void Uart_param_print(Stream &Serialport, uint8_t n, bool say_unknown);
 void Uart_features_print(Stream &Serialport);
 #include "bootloader_config.h"
 
+/// Hexadecimal with its leading zeros.
+static void Print_hex(Stream &Serialport, uint32_t value, int digits)
+{
+    for (int shift = (digits - 1) * 4; shift >= 0; shift -= 4)
+        Serialport.print((unsigned int)(value >> shift) & 15u, HEX);
+}
+
 SerialPacketParser parser;
 char command[20];
 char argument[20];
@@ -163,7 +170,7 @@ void UART_protocol(Stream &Serialport)
 
                 if (strlen(argument) != 0)
                 {
-                    PID.Velocity_limit = atoi(argument);
+                    PID.Velocity_limit = abs(atoi(argument)); // a negative limit turned the speed clamp round
                 }
 
                 Serialport.print("Vlimit ");
@@ -492,8 +499,13 @@ void UART_protocol(Stream &Serialport)
             }
 
             // Enter calibration mode
-            // #Cal: the calibration, then what parameter 56 adds (STEPFOC default: the encoder table and the
-            // anti-cogging, then save); #Calonly: the calibration alone (batch 20)
+            // #Cal: the calibration, then always the encoder table and the anti-cogging, then save;
+            // #Calonly: the calibration alone
+            else if ((strcmp(command, "Cal") == 0 || strcmp(command, "Calonly") == 0) && controller.ESTOP_error)
+            {
+                // it would end on its first loop, and a failed calibration marks the drive as not calibrated
+                Serialport.println("Cal: not started, the E-stop is latched (#Clear first)");
+            }
             else if (strcmp(command, "Cal") == 0 || strcmp(command, "Calonly") == 0)
             {
                 Encal_skip_next_after_calibration(strcmp(command, "Calonly") == 0);
@@ -509,16 +521,38 @@ void UART_protocol(Stream &Serialport)
                     Cal_saved_current_limit = PID.Iq_current_limit; // put back at the end (batch 22d)
                 controller.Spin_confirm_delta = 0; // diagnostic: clear any stale value from a prior #Cal attempt
                 Ticker_detach(TIM3);
+                // From a mode that was driving: bridge off first. The calibration writes no PWM for its first 3.2 s, so
+                // the last voltage vector used to stay applied as DC for that long.
+                controller.Controller_mode = 0;
+                Brake_Coast_As(false);
+                controller.Align_fail_reason = 0; // no reason left over from an earlier attempt
+                // Nothing carried into the calibration from a mode that was driving: its interrupt uses the output
+                // rotation and the tone of the last control loop as they stand, and the current integrals.
+                FOC.delay_c = 1.0f;
+                FOC.delay_s = 0.0f;
+                FOC.sound_d = 0.0f;
+                FOC.sound_q = 0.0f;
+                PID.Iq_errSum = 0.0f;
+                PID.Id_errSum = 0.0f;
                 Ticker_init(TIM3, LOOP_FREQ, Update_IT_callback_calib);
             }
 
             // Enter calibration mode fro angle offset
             else if (strcmp(command, "Calangle") == 0)
             {
-                Encal_skip_next_after_calibration(false);
-                controller.theta_offset = 0;
-                controller.Controller_mode = 9;
-                Serialport.println("Idle");
+                // Not while an error is latched: the control loop puts the mode back to idle at once, and the offset
+                // set to zero below then stayed zero (the motor commutated wrongly after the next Clear, and a Save kept it).
+                if (controller.Error)
+                {
+                    Serialport.println("Calangle: not started, the drive is in error (#Error, #Clear)");
+                }
+                else
+                {
+                    Encal_skip_next_after_calibration(false);
+                    controller.theta_offset = 0;
+                    controller.Controller_mode = 9;
+                    Serialport.println("Idle");
+                }
             }
 
             // set get theta_offset
@@ -585,7 +619,7 @@ void UART_protocol(Stream &Serialport)
                     }
                     else
                     {
-                        PID.Iq_current_limit = var;
+                        PID.Iq_current_limit = abs(var); // a negative limit turned the current clamps round
                     }
                 }
                 Serialport.print("Ilim ");
@@ -981,8 +1015,8 @@ void UART_protocol(Stream &Serialport)
                 Serialport.println("  Brake/Coast  Brake or coast the motor");
                 Serialport.println("");
                 Serialport.println("Calibration:");
-                Serialport.println("  Cal          Run full calibration");
-                Serialport.println("  Calonly      The calibration alone, without the runs after it (parameter 56)");
+                Serialport.println("  Cal          Calibration, encoder table, anti-cogging, then save");
+                Serialport.println("  Calonly      The calibration alone");
                 Serialport.println("  Calangle     Run angle-offset calibration only");
                 Serialport.println("  Par [n[,v]]  CAN parameter n: read it, or set it to v (no n: all)");
                 Serialport.println("  Tone f,mA,ms A tone through the motor (#Tone off stops it)");
@@ -1016,6 +1050,15 @@ void UART_protocol(Stream &Serialport)
                 Serialport.println(controller.BATCH_DATE);
                 Serialport.print("Software version: ");
                 Serialport.println(controller.SOFTWARE_VERSION);
+                Serialport.print("Build: ");
+                Print_hex(Serialport, BUILD_COMMIT & 0x0FFFFFFFu, 7);
+                Serialport.println((BUILD_COMMIT >> 28) & 1u ? "+" : "");
+                Serialport.print("Board ID: ");
+                Print_hex(Serialport, Board_id(), 8);
+                Serialport.println();
+                Serialport.print("Calibration ID: ");
+                Print_hex(Serialport, controller.calibration_id, 8);
+                Serialport.println();
                 Serialport.print("ISR execution time: ");
                 Serialport.print(controller.execution_time);
                 Serialport.println(" us");
@@ -1035,7 +1078,8 @@ void UART_protocol(Stream &Serialport)
                 Serialport.print(controller.sense1_offset);
                 Serialport.print(" / ");
                 Serialport.print(controller.sense2_offset);
-                Serialport.println(controller.sense_zero_switching == SENSE_ZERO_SW_IN_USE ? " counts from 2048, measured with the bridge switching" :
+                Serialport.println(controller.sense_zero_wait_vbus ? " (no motor supply at start-up: 2048 used; measured once the supply is there)" :
+                                   controller.sense_zero_switching == SENSE_ZERO_SW_IN_USE ? " counts from 2048, measured with the bridge switching" :
                                    (controller.sense_zero_ok ? " counts from 2048, measured with the bridge off" : " (not measured or out of range: 2048 used)"));
                 Serialport.print("Current sense zero with the bridge off: ");
                 Serialport.print(controller.sense1_offset_off);
@@ -1067,7 +1111,7 @@ void UART_protocol(Stream &Serialport)
                 Serialport.print(cogging.mode == COGGING_MODE_HARMONICS ? "harmonics" : (cogging.mode == COGGING_MODE_TABLE ? "table" : "off"));
                 Serialport.print(", scale ");
                 Serialport.print(cogging.scale);
-                Serialport.println(controller.cogging_saved ? " %, saved" : (controller.eeprom_block3_ok ? " %, not saved" : " %, block 3 not available"));
+                Serialport.println(Cogging_is_saved() ? " %, saved" : (controller.eeprom_block3_ok ? " %, not saved" : " %, block 3 not available"));
                 if (controller.Calibrated == 0)
                 {
                     Serialport.println("Not calibrated");
@@ -1232,13 +1276,22 @@ void UART_protocol(Stream &Serialport)
             }
             else if (strcmp(command, "Encal") == 0)
             {
+                // Only the words below do something: any other argument (a typo, "0") used to start the run and turn
+                // the motor. on and off wait for a run to end: switched during one, the table came out wrong.
+                const bool encal_turning = (Encal_state() == ENCAL_FORWARD || Encal_state() == ENCAL_BACKWARD);
                 if (strcmp(argument, "stop") == 0)
                     Encal_abort();
                 else if (strcmp(argument, "off") == 0)
-                    encoder.use = 0;
+                {
+                    if (!encal_turning)
+                        encoder.use = 0;
+                }
                 else if (strcmp(argument, "on") == 0)
-                    encoder.use = encoder.valid;
-                else if (strcmp(argument, "state") != 0)
+                {
+                    if (!encal_turning)
+                        encoder.use = encoder.valid;
+                }
+                else if (strlen(argument) == 0 || strcmp(argument, "save") == 0 || strcmp(argument, "all") == 0)
                     Encal_start(strcmp(argument, "save") == 0, strcmp(argument, "all") == 0 ? 2 : 0);
                 const uint8_t st = Encal_state();
                 int32_t pp = 0, once = 0;
@@ -1264,9 +1317,13 @@ void UART_protocol(Stream &Serialport)
             // aborts, #Cogcal state shows it. One motor turn each way at the cogcal speed: the shaft must be free to turn.
             else if (strcmp(command, "Cogcal") == 0)
             {
+                // Only these words do something: any other argument ("off", "0", a typo) used to start the run.
                 if (strcmp(argument, "stop") == 0)
+                {
+                    Encal_abort(); // a combined run may still be in its encoder part
                     Cogcal_abort();
-                else if (strcmp(argument, "state") != 0)
+                }
+                else if (strlen(argument) == 0 || strcmp(argument, "save") == 0 || strcmp(argument, "trim") == 0)
                     Cogcal_start(strcmp(argument, "save") == 0, strcmp(argument, "trim") == 0);
                 const uint8_t st = Cogcal_state();
                 Serialport.print("Anti-cogging identification: ");
@@ -1637,7 +1694,9 @@ void UART_protocol(Stream &Serialport)
 
                 if (strlen(argument) != 0)
                 {
-                    controller.pole_pairs = atoi(argument);
+                    // as parameter 78: 1-200, only while idle (any value used to be taken, in any mode)
+                    if (!Param_set(PARAM_POLE_PAIRS, atoi(argument)))
+                        Serialport.println("PP: not taken (1-200, and only while idle)");
                 }
                 Serialport.print("Pole pairs: ");
                 Serialport.println(controller.pole_pairs);
@@ -1946,9 +2005,8 @@ void Uart_features_print(Stream &Serialport)
     else
         Serialport.println("off");
     const uint32_t ac = ((uint32_t)f >> FEAT_AFTER_CAL_SHIFT) & 3u;
-    Serialport.print("  after a calibration (#Cal; #Calonly skips it): ");
-    Serialport.println(ac == AFTER_CAL_BOTH ? "encoder table and anti-cogging, then save" :
-                       ac == AFTER_CAL_COGGING ? "anti-cogging, then save" : "nothing");
+    Serialport.print("  after #Calangle (parameter 56): ");
+    Serialport.println(ac != AFTER_CAL_NOTHING ? "anti-cogging, then save" : "nothing");
     if (f & (FEAT_RUN_CALIBRATION | FEAT_RUN_ENCODER | FEAT_RUN_COGGING | FEAT_RUN_PENDING))
     {
         Serialport.print("  running: ");

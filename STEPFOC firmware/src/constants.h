@@ -184,7 +184,7 @@ EEPROM CONSTANTS
 #define WD_FALLBACK_SPEED_EEPROM 272     // int ticks/s: the speed cap of descend
 #define WD_AFTER_ACTION_EEPROM 276       // int: after hold/descend, 0 legacy, 2 brake, 3 coast
 #define BOARD_PRODUCT_EEPROM 280        // int: product lock stamp, the product that calibrated this board (1, 2; 0 none)
-#define SETTINGS2_RESERVED_I2_EEPROM 284 // unused int, reserved
+#define CALIBRATION_ID_EEPROM 284       // int: a new random number at every successful calibration; 0 none yet
 #define SETTINGS2_RESERVED_I3_EEPROM 288 // unused int, reserved
 #define SETTINGS2_RESERVED_I4_EEPROM 292 // unused int, reserved
 #define SETTINGS2_RESERVED_F1_EEPROM 296 // unused float, reserved
@@ -220,6 +220,8 @@ EEPROM CONSTANTS
 #define SENSE_ZERO_SW_INTERRUPTED 4   // a command or an error came first: the bridge-off zero stays
 #define SENSE_ZERO_SW_MEASURED 5      // measured and plausible, not in use (parameter 46 switches it in)
 #define SENSE_ZERO_MAX_DEV 200           // counts from 2048 beyond which the zero is not trusted (2048 is kept)
+#define SENSE_ZERO_VBUS_WAIT_MS 500      // at start-up, how long the zero waits for the motor supply
+#define SENSE_ZERO_LATE_SETTLE 250       // control loops with the supply present and the bridge coasting before a late zero
 
 // Which firmware this is, reported in OUT_IN_IDENTITY byte 0: 1 = STEPFOC, 2 = Spectral Micro
 #define PRODUCT_ID 1
@@ -278,7 +280,8 @@ CAN BUS CONSTANTS
 // Generic parameters (2026-11). A new setting gets a parameter number (PARAM_* below) instead of a command id,
 // so settings no longer use up the 64 command ids.
 // IN_PARAM_SET: data frame, DLC 5: parameter number (u8), value (i32, big-endian). No answer. Unknown numbers
-//   are ignored; values outside a parameter's range are clamped (the tool id is only taken if 0-255).
+//   are ignored; outside a parameter's range most values are refused and nothing changes, a few are
+//   clamped (6, 27, 30, 38, 44) and some become off or none (7, 24-26, 28, 34, 35).
 //   Saved by IN_SAVE_CONFIG like every other setting.
 // IN_PARAM_GET: data frame, DLC 1: parameter number. The drive answers on OUT_PARAM_VALUE.
 // OUT_PARAM_VALUE: DLC 5: parameter number, the value in force (i32, big-endian); DLC 1: unknown parameter.
@@ -437,7 +440,7 @@ CAN BUS CONSTANTS
 #define PARAM_ENCAL_USE 53          // 1: correct the encoder with the table (only if one was measured)
 #define PARAM_ENCAL_PP 54           // R the table's error peak to peak, 0.01 deg of the shaft
 #define PARAM_ENCAL_ONCE 55         // R its once-per-turn part (amplitude), 0.01 deg of the shaft
-#define PARAM_AFTER_CAL 56          // what runs after a successful calibration: AFTER_CAL_* (saved with the table)
+#define PARAM_AFTER_CAL 56          // what follows a #Calangle: 0 nothing, else the anti-cogging (saved with the table); #Cal does not read it
 #define PARAM_ENCAL_OFFSET 57       // R how far the last run moved the electrical offset, 0.1 deg electrical
 #define PARAM_ID_SETPOINT 58        // the d-axis current setpoint, mA (RAM, as #Id): no torque, more phase current
 // The current-sense zero trim (batch 11): parameter 43 = 4 identifies the anti-cogging, corrects the zeros from its
@@ -501,6 +504,18 @@ CAN BUS CONSTANTS
 #define SOUND_LIMIT_DEFAULT_MV 2000
 #define SOUND_LIMIT_MAX_MV 6000
 #define PARAM_STACK_UNUSED 83       // R RAM between the heap and the stack never used since start, bytes (batch 23)
+#define KV_RUNS 4                   // spins from standstill for KV, alternately forward and back
+#define KV_BRAKE_TICKS (LOOP_FREQ / 2) // braking between them
+#define KV_VOLTAGE_MV 6000          // the voltage limit of the spins
+#define KV_SPREAD_WARN_PCT 5.0f     // the log warns when they differ by more
+#define PARAM_BUILD_COMMIT 84       // R the git commit it was built from: 7 hex digits; bit 28 = with uncommitted changes
+#define PARAM_BUILD_TIME 85         // R when it was built, Unix seconds UTC
+#define PARAM_BOARD_ID 86           // R this board: the chip's unique number folded into 32 bits; never changes
+#define PARAM_CALIBRATION_ID 87     // R a new random number at every successful calibration, saved by #Save; 0 none yet
+#ifndef BUILD_COMMIT                // set by build_id.py
+#define BUILD_COMMIT 0u
+#define BUILD_TIME 0u
+#endif
 #define INPUT_FILTER_MAX_HZ (LOOP_FREQ / 25)
 #define VEL_INT_DEADBAND_MAX 2000
 #define ENCAL_IDLE 0
@@ -514,7 +529,7 @@ CAN BUS CONSTANTS
 #define AFTER_CAL_NOTHING 0
 #define AFTER_CAL_COGGING 1         // the anti-cogging identification
 #define AFTER_CAL_BOTH 2            // the encoder table, then the anti-cogging
-#define AFTER_CAL_DEFAULT AFTER_CAL_BOTH // batch 20: a calibration runs both, then saves (where no 56 is saved)
+#define AFTER_CAL_DEFAULT AFTER_CAL_BOTH // where no 56 is saved
 #define MODE_ENCAL 12               // Controller_mode while the encoder table is measured (open loop)
 #define ENCAL_TICKS_PER_S 2048      // the field's speed: one shaft turn in 8 s
 #define ENCAL_RAMP_MS 300           // the current rises at the start angle first

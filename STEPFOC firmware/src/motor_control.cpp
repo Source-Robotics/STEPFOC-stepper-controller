@@ -348,6 +348,17 @@ static bool only_watchdog_error()
 void Sense_zero_calibrate()
 {
   Brake_Coast_As(false); // coast: phases Hi-Z, no current
+  // The current-sense amplifiers need the motor supply: without it (USB plugged in first) they read about 60 counts
+  // off, about 100 mA, and that zero was used as if it were right (bench 2026-11-10: 65 / 59 against 2 / -4). So wait
+  // a little for a supply that is still coming up; if it does not come, 2048 is used until the control loop
+  // measures the zero itself (Sense_zero_late_step(), as soon as the supply is there).
+  const uint32_t t_wait = millis();
+  int vbus_mv = Get_voltage_mV(ADC_CHANNEL_4_READ_VBUS());
+  while (vbus_mv < controller.Min_Vbus && millis() - t_wait < SENSE_ZERO_VBUS_WAIT_MS)
+  {
+    delay(10);
+    vbus_mv = Get_voltage_mV(ADC_CHANNEL_4_READ_VBUS());
+  }
   delay(20);
   int32_t sum1 = 0;
   int32_t sum2 = 0;
@@ -359,7 +370,8 @@ void Sense_zero_calibrate()
   }
   int off1 = (int)((sum1 + SENSE_ZERO_SAMPLES / 2) / SENSE_ZERO_SAMPLES) - 2048;
   int off2 = (int)((sum2 + SENSE_ZERO_SAMPLES / 2) / SENSE_ZERO_SAMPLES) - 2048;
-  controller.sense_zero_ok = (abs(off1) <= SENSE_ZERO_MAX_DEV && abs(off2) <= SENSE_ZERO_MAX_DEV);
+  controller.sense_zero_wait_vbus = (vbus_mv < controller.Min_Vbus);
+  controller.sense_zero_ok = !controller.sense_zero_wait_vbus && abs(off1) <= SENSE_ZERO_MAX_DEV && abs(off2) <= SENSE_ZERO_MAX_DEV;
   // plus the trims an anti-cogging run found (encal.h; 0 until one ran): the bridge-off zeros are a few counts off
   controller.sense1_offset = controller.sense_zero_ok ? off1 + encoder.zero_trim[0] : 0;
   controller.sense2_offset = controller.sense_zero_ok ? off2 + encoder.zero_trim[1] : 0;
@@ -404,8 +416,8 @@ static bool Sense_zero_switching_step()
   if (ok)
   {
     // Kept, not used: on the bench (2026-11-07) the switching zero raised the 1st harmonic; parameter 46 switches it in.
-    controller.sense1_offset_sw = o1;
-    controller.sense2_offset_sw = o2;
+    controller.sense1_offset_sw = o1 + encoder.zero_trim[0]; // with the stored trim, as the bridge-off zeros
+    controller.sense2_offset_sw = o2 + encoder.zero_trim[1];
     controller.sense_zero_switching = SENSE_ZERO_SW_MEASURED;
   }
   else
@@ -413,6 +425,52 @@ static bool Sense_zero_switching_step()
     controller.sense_zero_switching = SENSE_ZERO_SW_REJECTED;
   }
   return false;
+}
+
+/// The bridge-off zero, measured by the control loop when there was no motor supply at start-up (see
+/// Sense_zero_calibrate()). It waits until the supply has been there, and the bridge coasting, for
+/// SENSE_ZERO_LATE_SETTLE loops in a row (idle with coast, or the error branch: the Vbus error a late supply latches),
+/// then averages SENSE_ZERO_SAMPLES readings as Collect_data() took them, and starts the switching zero again, which
+/// had no supply either. Anything else in between (a command, a brake, the supply dropping) starts the count again.
+/// Set by Brake_Coast_As(false), read and cleared once per control loop by Sense_zero_late_step(): the bridge coasted
+/// in this loop.
+static volatile bool coasted_this_loop = false;
+
+static void Sense_zero_late_step()
+{
+  static uint16_t loops = 0;
+  static int32_t sum1 = 0, sum2 = 0;
+  const bool coasted = coasted_this_loop;
+  coasted_this_loop = false;
+  if (!controller.sense_zero_wait_vbus)
+    return;
+  if (controller.VBUS_mV < controller.Min_Vbus || !coasted || controller.Controller_mode != 0)
+  {
+    loops = 0;
+    sum1 = sum2 = 0;
+    return;
+  }
+  loops++;
+  if (loops <= SENSE_ZERO_LATE_SETTLE)
+    return;
+  // the readings before the zero in use was subtracted
+  sum1 += controller.Sense1_Raw + controller.sense1_offset;
+  sum2 += controller.Sense2_Raw + controller.sense2_offset;
+  if (loops < SENSE_ZERO_LATE_SETTLE + SENSE_ZERO_SAMPLES)
+    return;
+  const int off1 = (int)((sum1 + SENSE_ZERO_SAMPLES / 2) / SENSE_ZERO_SAMPLES) - 2048;
+  const int off2 = (int)((sum2 + SENSE_ZERO_SAMPLES / 2) / SENSE_ZERO_SAMPLES) - 2048;
+  controller.sense_zero_ok = (abs(off1) <= SENSE_ZERO_MAX_DEV && abs(off2) <= SENSE_ZERO_MAX_DEV);
+  controller.sense1_offset = controller.sense_zero_ok ? off1 + encoder.zero_trim[0] : 0;
+  controller.sense2_offset = controller.sense_zero_ok ? off2 + encoder.zero_trim[1] : 0;
+  controller.sense1_offset_off = controller.sense1_offset;
+  controller.sense2_offset_off = controller.sense2_offset;
+  controller.sense_zero_wait_vbus = 0;
+  loops = 0;
+  sum1 = sum2 = 0;
+  sw_zero_loops = 0; // and the switching zero, measured again in the next idle loops
+  sw_zero_sum1 = sw_zero_sum2 = 0;
+  controller.sense_zero_switching = SENSE_ZERO_SW_RUNNING;
 }
 
 /// Watchdog fallback (hold / descend, see watchdog_action.h). Started on the first control loop of a
@@ -648,6 +706,9 @@ void IT_callback(void)
   }
   else /// If there is error driver is disabled and in sleep mode
   {
+    // Comm_delay_update() runs only without an error: hold and descend used the rotation of the last moving loop
+    FOC.delay_c = 1.0f;
+    FOC.delay_s = 0.0f;
     /// A pure watchdog trip honours controller.watchdog_action (see watchdog_action.h). Byte 0 (what
     /// RTI and the lib default send), unknown bytes and any other fault keep the old behaviour, which
     /// follows the persistent controller.brake_coast setting.
@@ -698,6 +759,7 @@ void IT_callback(void)
   /* Capture and histogram (scope.cpp), after the loop so a sample lines up with the setpoint it produced */
   const uint32_t prof_t4 = DWT->CYCCNT;
   Scope_tick();
+  Sense_zero_late_step(); // only after a start without the motor supply
   const uint32_t prof_t5 = DWT->CYCCNT;
   Loop_profile_add(prof_t0, prof_t1, prof_t2, prof_t3, prof_t4, prof_t5);
 
@@ -865,6 +927,7 @@ int Calibrate_Angle_Offset()
 
   case 6: // finished
     controller.Controller_mode = 0;
+    Calibration_id_new(); // the offset is part of the calibration
     Encal_after_angle_calibration(); // the anti-cogging depends on the offset (parameter 56, batch 20)
     // reset for next time
     state = 0;
@@ -1139,9 +1202,22 @@ int Calibrate_Angle_Offset_Align()
   static float best_vrev = 0.0f;
   static float vfwd_t = 0.0f;
 
+  // After a calibration that was ended from outside (an E-stop) the alignment starts from its first stage. Its
+  // state is kept in the statics above, and only its own done and failed exits reset them: the next #Cal used to
+  // resume where the last one was cut off, and from the sweep it could commit the old result as a success.
+  if (controller.Align_restart)
+  {
+    controller.Align_restart = 0;
+    st = cnt = cyc = retry = 0;
+    sweep_index = sweep_stage = 0;
+    off_a = off_b = vel_accum = 0.0f;
+    lock_v = 0;
+  }
+
   cyc++;
   if (cyc > MAX_CYCLES && st < 8) // timeout guards only the lock+verify stages; the trim is iteration-bounded
   {
+    controller.Align_fail_reason = 1;
     PID.Ud_setpoint = 0;
     PID.Uq_setpoint = 0;
     PID.Id_setpoint = 0;
@@ -1161,7 +1237,12 @@ int Calibrate_Angle_Offset_Align()
   switch (st)
   {
   case 0: // init: derive lock voltage from measured resistance, clamp to a safe band
-    lock_v = (int)((float)controller.calibration_offset_current * controller.Total_Resistance); // mA * ohm = mV
+    controller.Align_fail_reason = 0;
+    controller.Align_flips = 0;
+    // The lock voltage for the offset current through one coil. It used controller.Total_Resistance, which this
+    // firmware never fills, so the lock was always the 500 mV floor: a few tens of mA in a small motor with a
+    // high coil resistance, where the rotor can rest in a detent instead of at the field angle.
+    lock_v = (int)((float)controller.calibration_offset_current * (controller.Resistance + 2.0f * Rdson + SENSE_RESISTOR)); // mA * ohm = mV
     if (lock_v < 500)
       lock_v = 500;
     if (lock_v > 4000)
@@ -1184,6 +1265,7 @@ int Calibrate_Angle_Offset_Align()
     if (++cnt >= settle_cycles)
     {
       off_a = Align_read_offset(LOCK_ANGLE);
+      controller.Align_off_a = off_a;
       cnt = 0;
       st = 3;
     }
@@ -1203,6 +1285,7 @@ int Calibrate_Angle_Offset_Align()
     if (++cnt >= settle_cycles)
     {
       off_b = Align_read_offset(LOCK_ANGLE);
+      controller.Align_off_b = off_b;
       cnt = 0;
       st = 5;
     }
@@ -1250,6 +1333,7 @@ int Calibrate_Angle_Offset_Align()
     {
       float vfwd = vel_accum / verify_measure;
       controller.Velocity_fwd = (int)vfwd; // telemetry
+      controller.Align_verify_speed = (int)vfwd;
       PID.Iq_setpoint = 0;
       PID.Id_setpoint = 0;
 
@@ -1267,6 +1351,7 @@ int Calibrate_Angle_Offset_Align()
           controller.theta_offset -= PI2;
         controller.aligned_angle = controller.theta_offset;
         retry = 1;
+        controller.Align_flips = 1;
         vel_accum = 0.0f;
         cnt = 0;
         st = 6;
@@ -1274,6 +1359,7 @@ int Calibrate_Angle_Offset_Align()
       else
       {
         // still reversed after a flip, or not spinning at all -> fail
+        controller.Align_fail_reason = vfwd < -fwd_threshold ? 3 : 2;
         st = cnt = cyc = retry = 0;
         off_a = off_b = vel_accum = 0.0f;
         lock_v = 0;
@@ -1415,6 +1501,9 @@ int Calibrate_Angle_Offset_Align()
 void Update_IT_callback_calib()
 {
   IWatchdog.reload();
+  // An E-stop ends the calibration. Nothing looked at it here: the motor kept turning until it was through.
+  if (controller.ESTOP_error && controller.Calib_error == 0)
+    controller.Calib_error = 1;
 
   /// Flags
   static int calib_step_pole_pair = 0;
@@ -1471,6 +1560,8 @@ void Update_IT_callback_calib()
   static int KV_duration = 5000;
   static int64_t KV_speed_accumulator = 0;
   static int64_t KV_current_accumulator = 0;
+  static int KV_run = 0;  // which of the KV_RUNS spins
+  static int KV_wait = 0; // ticks left braking between two spins
 
   // Open loop
   static float theta_SIM = 0;
@@ -1795,43 +1886,80 @@ Check if the phase order is correct
     }
   }
 
-  /// Calculate Kt, KV and Flux linkage
+  /// Calculate Kt, KV and Flux linkage: KV_RUNS spins from standstill, alternately forward and back, braking between
+  /// them. Each runs at a fixed voltage limit (KV_VOLTAGE_MV, the user's limit is put back afterwards), so the result
+  /// depends on neither the supply nor #Vlim; KV is their mean and the log shows how far they agree.
   if (Phase_order_step == 1 && KV_step == 0 && controller.Calib_error == 0)
   {
-
-    if (KV_ticks <= KV_duration)
+    if (KV_wait > 0)
     {
+      KV_wait = KV_wait - 1;
+      Collect_data(); // the speed's moving average runs down to 0 before the next spin
+    }
+    else if (KV_ticks <= KV_duration)
+    {
+      if (KV_ticks == 0)
+      {
+        PID.Iq_errSum = 0.0f; // nothing left from the spin before
+        PID.Id_errSum = 0.0f;
+        if (KV_run == 0)
+          Cal_saved_voltage_limit = PID.Voltage_limit;
+        PID.Voltage_limit = KV_VOLTAGE_MV;
+      }
       PID.Iq_current_limit = 1600;
-      PID.Iq_setpoint = 500;
+      PID.Iq_setpoint = (KV_run & 1) ? -500 : 500;
       Collect_data();
       Torque_mode();
       sine_cosine_calc(controller.Electric_Angle);
       park_transform(controller.Sense1_mA, controller.Sense2_mA, &FOC.Id, &FOC.Iq);
       KV_ticks = KV_ticks + 1;
-      float rpm_speed = (controller.Velocity_Average * 60) / 16384;
-      KV_speed_accumulator = KV_speed_accumulator + rpm_speed;
-      KV_current_accumulator = KV_current_accumulator + FOC.Iq;
+      KV_speed_accumulator = KV_speed_accumulator + controller.Velocity_Average;
     }
     else
     {
-
-      float rpm_filtered = KV_speed_accumulator / KV_duration;
-      float current_filtered = KV_current_accumulator / KV_duration;
-      int load_correction = PID.Iq_setpoint / (PID.Iq_setpoint - current_filtered);
-      /// ((controller.pole_pairs * 4) / controller.pole_pairs ) is just to reming that we need to multiple by 4; 1.8 deg stepper = 200 steps / 4 = 50 pole pairs
-      /// Thus 4 is the magic number
-      float KV_value = (rpm_filtered / (controller.VBUS_mV / 1000)) * ((controller.pole_pairs * 4) / controller.pole_pairs);
-      controller.KV = KV_value;
-      controller.Kt = float(8.27) / controller.KV;
-      controller.flux_linkage = (float)2 / 3 * (float)controller.Kt / (float)controller.pole_pairs;
-
-      controller.temp1 = KV_value;
+      float rpm_filtered = (float)KV_speed_accumulator * 60.0f / 16384.0f / (float)KV_duration;
+      if (rpm_filtered < 0.0f)
+        rpm_filtered = -rpm_filtered;
+      const int spin_mV = controller.VBUS_mV < KV_VOLTAGE_MV ? controller.VBUS_mV : KV_VOLTAGE_MV;
+      float KV_value = rpm_filtered * 1000.0f / (float)spin_mV;
+      controller.KV_runs[KV_run] = KV_value;
+      KV_run = KV_run + 1;
       pwm_set(PWM_CH1, PWM_MAX, 13);
       pwm_set(PWM_CH2, PWM_MAX, 13);
       pwm_set(PWM_CH3, PWM_MAX, 13);
       pwm_set(PWM_CH4, PWM_MAX, 13);
-      KV_step = 1;
-      controller.KV_status = 2;
+      KV_ticks = 0;
+      KV_speed_accumulator = 0;
+      KV_current_accumulator = 0;
+      if (KV_run < KV_RUNS)
+      {
+        KV_wait = KV_BRAKE_TICKS;
+      }
+      else
+      {
+        // Spread: runs of the same direction only. Forward and back can differ by a few percent while the electrical
+        // offset is still a little off (a first calibration, no encoder table yet); their mean is right regardless.
+        float sum = 0.0f, worst = 0.0f;
+        for (int k = 0; k < KV_RUNS; k++)
+        {
+          sum += controller.KV_runs[k];
+          if (k >= 2)
+          {
+            float gap = controller.KV_runs[k] - controller.KV_runs[k - 2];
+            if (gap < 0.0f)
+              gap = -gap;
+            if (gap > worst)
+              worst = gap;
+          }
+        }
+        controller.KV = sum / (float)KV_RUNS;
+        controller.KV_spread_pct = controller.KV > 0.0f ? worst / controller.KV * 100.0f : 0.0f;
+        controller.Kt = float(8.27) / controller.KV;
+        controller.flux_linkage = (float)2 / 3 * (float)controller.Kt / (float)controller.pole_pairs;
+        controller.temp1 = controller.KV;
+        KV_step = 1;
+        controller.KV_status = 2;
+      }
     }
   }
 
@@ -1876,6 +2004,8 @@ Check if the phase order is correct
     KV_speed_accumulator = 0;
     KV_current_accumulator = 0;
     KV_step = 0;
+    KV_run = 0;
+    KV_wait = 0;
   }
 
   // If there is error
@@ -1883,9 +2013,19 @@ Check if the phase order is correct
   {
     // Detach calibration interrupt routine
     Ticker_detach(TIM3);
+    Brake_Coast_As(false); // bridge off now: the last vector used to stay applied until the main loop printed its report
     controller.Calibration = 2;
     controller.Calibrated = 0;
     Cal_restore_current_limit(); // batch 22d
+    // the angle alignment may have been cut off half-way (an E-stop): it starts over next time, its progress line
+    // stops, and nothing it commanded stays behind for a later voltage or current command
+    controller.Align_restart = 1;
+    controller.Align_stage = 0;
+    probe_attempt = 0;
+    PID.Ud_setpoint = 0;
+    PID.Uq_setpoint = 0;
+    PID.Id_setpoint = 0;
+    PID.Iq_setpoint = 0;
     // Reset all flags
     calib_step_magnet = 0;
     calib_step_voltage = 0;
@@ -1920,6 +2060,8 @@ Check if the phase order is correct
     KV_speed_accumulator = 0;
     KV_current_accumulator = 0;
     KV_step = 0;
+    KV_run = 0;
+    KV_wait = 0;
   }
 }
 
@@ -2074,7 +2216,25 @@ void Calib_report(Stream &Serialport)
       {
         Serialport.println(" ");
         Serialport.println("Phase order is wrong!");
-        Serialport.println("Switch motor phases and try again!");
+        if (controller.Align_fail_reason != 0)
+        {
+          Serialport.print("Angle alignment gave up: ");
+          Serialport.println(controller.Align_fail_reason == 1 ? "it timed out" :
+                             controller.Align_fail_reason == 2 ? "the rotor did not turn under current" :
+                                                                 "the rotor turned the wrong way, also after flipping");
+          Serialport.print("Check speed ");
+          Serialport.print(controller.Align_verify_speed);
+          Serialport.print(" ticks/s (need > 1000), flipped ");
+          Serialport.print(controller.Align_flips);
+          Serialport.print(", offsets ");
+          Serialport.print(controller.Align_off_a, 3);
+          Serialport.print(" / ");
+          Serialport.print(controller.Align_off_b, 3);
+          Serialport.println(" rad");
+          Serialport.println("Try again; if it repeats, check the motor, its wiring and that the shaft is free");
+        }
+        else
+          Serialport.println("Switch motor phases and try again!");
         if (controller.Spin_confirm_delta != 0)
         {
           Serialport.print("Spin-confirm delta: ");
@@ -2091,6 +2251,14 @@ void Calib_report(Stream &Serialport)
         Serialport.print("Angle offset is: ");
         Serialport.print(controller.theta_offset);
         Serialport.println(" ");
+        Serialport.print("Alignment check: ");
+        Serialport.print(controller.Align_verify_speed);
+        Serialport.print(" ticks/s, flipped ");
+        Serialport.print(controller.Align_flips);
+        Serialport.print(", offsets ");
+        Serialport.print(controller.Align_off_a, 3);
+        Serialport.print(" / ");
+        Serialport.println(controller.Align_off_b, 3);
         Serialport.print("Phase order is good!");
         Serialport.println(" ");
       }
@@ -2108,6 +2276,17 @@ void Calib_report(Stream &Serialport)
         Serialport.print("Kt is: ");
         Serialport.print(controller.Kt, 5);
         Serialport.println(" ");
+        Serialport.print("KV runs:");
+        for (int k = 0; k < KV_RUNS; k++)
+        {
+          Serialport.print(" ");
+          Serialport.print(controller.KV_runs[k], 2);
+        }
+        Serialport.print(" (same direction within ");
+        Serialport.print(controller.KV_spread_pct, 1);
+        Serialport.println(" %)");
+        if (controller.KV_spread_pct > KV_SPREAD_WARN_PCT)
+          Serialport.println("KV runs differ by more than 5 %: calibrate again, and check that the shaft is free");
         Serialport.print("Flux linkage is: ");
         Serialport.print(controller.flux_linkage, 6);
         Serialport.println(" ");
@@ -2124,6 +2303,8 @@ void Calib_report(Stream &Serialport)
     {
       Serialport.print("Calibration failed!");
       Serialport.println(" ");
+      if (controller.ESTOP_error)
+        Serialport.println("Stopped by an E-stop: #Clear, then calibrate again.");
       Serialport.print("----------------");
       Serialport.println(" ");
       controller.Controller_mode = 0;
@@ -2158,7 +2339,7 @@ void Calib_report(Stream &Serialport)
 
       Serialport.print("Calibration success!");
       Serialport.println(" ");
-      const uint8_t next = Encal_after_calibration_planned(); // parameter 56, or nothing after #Calonly
+      const uint8_t next = Encal_after_calibration_planned(); // both, or nothing after #Calonly
       if (next == AFTER_CAL_BOTH) // batch 20
         Serialport.println("Next, by itself: the encoder table, then anti-cogging (about a minute; keep the shaft "
                            "free). Everything is saved when they finish (#Encal state, #Cogcal state)");
@@ -2182,7 +2363,8 @@ void Calib_report(Stream &Serialport)
       controller.Error = 0;
       controller.Calibrated = 1;
       Cal_restore_current_limit(); // the user's limit again, before the runs that follow (batch 22d)
-      Encal_after_calibration(); // parameter 56: the anti-cogging and/or the encoder table follow
+      Calibration_id_new(); // before those runs, whose save keeps it
+      Encal_after_calibration(); // the encoder table and the anti-cogging follow (not after #Calonly)
 
       controller.Calibration = 0;
       controller.Calib_error = 0;
@@ -2865,6 +3047,11 @@ void Phase_order()
 /// Brake (phases shorted) or coast (phases Hi-Z), chosen by the caller.
 void Brake_Coast_As(bool brake)
 {
+  coasted_this_loop = !brake; // for the late zero (Sense_zero_late_step())
+  // The current loop is not running here (idle, an error, a watchdog brake or coast): its integrals start from zero
+  // the next time, and a bad number (NaN) cannot stay in them until the next power cycle.
+  PID.Iq_errSum = 0.0f;
+  PID.Id_errSum = 0.0f;
   if (brake)
   {
     // Brake
@@ -2886,7 +3073,11 @@ void Brake_Coast_As(bool brake)
 /// Brake or coast according to the persistent setting (IN_SETTINGS bit0 / UART).
 void Brake_Coast()
 {
-  Brake_Coast_As(controller.brake_coast == 1);
+  // While a late current-sense zero waits and the supply is there, idle coasts instead of braking: the zero is
+  // measured with the bridge off (Sense_zero_late_step(), about 80 ms), then the brake is back. At rest the two are
+  // the same for the motor. Without this the default brake kept the late zero from ever being measured.
+  const bool late_zero = controller.sense_zero_wait_vbus && controller.VBUS_mV >= controller.Min_Vbus;
+  Brake_Coast_As(controller.brake_coast == 1 && !late_zero);
 }
 
 /// @brief What a motion frame does to the bridge before it moves: nothing on STEPFOC (its bridge never sleeps).
@@ -2907,7 +3098,12 @@ void Gripper_mode()
     Gripper.At_position = 0; // Only reset here when new command arrives
   }
 
-  PID.Iq_current_limit = Gripper.current_setpoint;
+  // 0 to the drive's maximum. The frame carries a signed number: a negative one turned the current clamps round, so
+  // they pinned the current at full whatever the loop asked for, and a large one was no limit at all.
+  {
+    const int grip_limit = abs(Gripper.current_setpoint);
+    PID.Iq_current_limit = grip_limit > MAX_DRIVE_CURRENT ? MAX_DRIVE_CURRENT : grip_limit;
+  }
   PID.Position_setpoint = map(Gripper.position_setpoint, 0, 255, Gripper.max_open_position, Gripper.max_closed_position);
   int vel_setpoint = map(Gripper.speed_setpoint, 0, 255, Gripper.min_speed, Gripper.max_speed);
 
@@ -3460,12 +3656,42 @@ void Input_filter(int32_t pos_in, float vel_in, float *position_error, float *sp
 /// The current limit in force when #Cal started (batch 22d): the calibration sets its own 1600 mA for its steps;
 /// it is put back when the calibration ends, so neither the runs after it nor a #Save use 1600 on a smaller motor.
 float Cal_saved_current_limit = 0.0f;
+int Cal_saved_voltage_limit = -1;
 
 void Cal_restore_current_limit()
 {
   if (Cal_saved_current_limit > 0.0f)
     PID.Iq_current_limit = Cal_saved_current_limit;
   Cal_saved_current_limit = 0.0f;
+  if (Cal_saved_voltage_limit >= 0)
+    PID.Voltage_limit = Cal_saved_voltage_limit;
+  Cal_saved_voltage_limit = -1;
+}
+
+/// @brief This board's ID (parameter 86): the chip's factory-unique 96 bits folded into 32 (FNV-1a). Never changes.
+uint32_t Board_id()
+{
+  const uint8_t *uid = (const uint8_t *)UID_BASE;
+  uint32_t h = 2166136261u;
+  for (int i = 0; i < 12; i++)
+    h = (h ^ uid[i]) * 16777619u;
+  return h;
+}
+
+/// @brief A new calibration ID (parameter 87), at every successful calibration; #Save keeps it. This chip has no random
+/// number generator, so it mixes what differs from run to run (the time the calibration took, the timer, the KV it
+/// measured) with the previous ID and the board ID. 0 is kept for "none yet".
+void Calibration_id_new()
+{
+  uint32_t kv = 0;
+  const float measured = controller.KV;
+  memcpy(&kv, &measured, 4);
+  const uint32_t mix[] = {controller.calibration_id, Board_id(), micros(), SysTick->VAL, kv};
+  uint32_t h = 2166136261u;
+  for (uint32_t m : mix)
+    for (int b = 0; b < 32; b += 8)
+      h = (h ^ ((m >> b) & 255u)) * 16777619u;
+  controller.calibration_id = h != 0 ? h : 1;
 }
 
 /// Stack margin (batch 23, parameter 83): setup() paints the free RAM between the heap and the stack at its end; the
