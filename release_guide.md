@@ -132,13 +132,19 @@ the short 7-char form in prose).
 Prefer the `gh` CLI if it's installed:
 
 ```
+cp Binaries/firmware.bin stepfoc-firmware-VNNN.bin
 gh release create VNNN \
   --target <full-commit-hash> \
   --title "Release NNN" \
   --notes-file release_body.md \
-  "Binaries/firmware.bin#stepfoc-firmware-VNNN.bin" \
+  stepfoc-firmware-VNNN.bin \
   firmware.json
 ```
+
+Copy the binary to its release name first. `gh`'s `file#text` form sets only the
+asset's display label: `"Binaries/firmware.bin#stepfoc-firmware-VNNN.bin"` uploads an asset named
+`firmware.bin`, and the web flasher, which downloads the name in `firmware.json`,
+gets a 404 (V109 hit this; the asset was replaced before publishing).
 
 If `gh` isn't available (it wasn't in the environment this guide was written
 in), the release can be created directly via the GitHub REST API. This needs
