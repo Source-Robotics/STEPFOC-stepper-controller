@@ -410,6 +410,15 @@ void IT_callback(void)
   Collect_data();
   /***********************************/
 
+  /// Range error
+  if (controller.Range_armed &&
+      ((controller.Position_Ticks > controller.Range_max && controller.Velocity_Filter > RANGE_OUTWARD_TICKS_S) ||
+       (controller.Position_Ticks < controller.Range_min && controller.Velocity_Filter < -RANGE_OUTWARD_TICKS_S)))
+  {
+    controller.Range_error = 1;
+    controller.Error = 1;
+  }
+
   /* Calculate Iq and Id currents at this moment*/
   sine_cosine_calc(controller.Electric_Angle);
   park_transform(controller.Sense1_mA, controller.Sense2_mA, &FOC.Id, &FOC.Iq);

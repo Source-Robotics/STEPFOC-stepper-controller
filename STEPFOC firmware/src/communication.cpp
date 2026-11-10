@@ -735,6 +735,10 @@ void UART_protocol(Stream &Serialport)
                 {
                     Serialport.println("Velocity error ");
                 }
+                if (controller.Range_error == 1)
+                {
+                    Serialport.println("Range error ");
+                }
                 if (controller.Current_error == 1)
                 {
                     Serialport.println("Current error ");
@@ -778,6 +782,7 @@ void UART_protocol(Stream &Serialport)
                 controller.Error = 0;
                 controller.ESTOP_error = 0;
                 controller.Watchdog_error = 0;
+                controller.Range_error = 0;
                 controller.Controller_mode = 0;
                 Gripper.estop_error = 0;
                 Serialport.println("Clear errors");

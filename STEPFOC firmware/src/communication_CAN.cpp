@@ -560,6 +560,7 @@ void CAN_protocol(Stream &Serialport)
                 controller.Error = 0;
                 controller.ESTOP_error = 0;
                 controller.Watchdog_error = 0;
+                controller.Range_error = 0;
                 controller.Controller_mode = 0;
                 Gripper.estop_error = 0;
                 break;
@@ -731,6 +732,32 @@ void CAN_protocol(Stream &Serialport)
                     controller.Wrong_DL = 1;     
                 }
                 
+                break;
+            }
+
+            case IN_RANGE:{
+                if (CAN_RX_msg.type == REMOTE_FRAME){
+                    Range_CAN();
+                    controller.watchdog_reset = 1;
+                }else if(CAN_RX_msg.len == 8){
+                    int lo = fourBytesToInt(&CAN_RX_msg.data[0]);
+                    int hi = fourBytesToInt(&CAN_RX_msg.data[4]);
+                    if (lo < hi){
+                        // Disarmed while the ends change: the ISR never reads half a pair.
+                        controller.Range_armed = 0;
+                        controller.Range_min = lo;
+                        controller.Range_max = hi;
+                        controller.Range_armed = 1;
+                        controller.Wrong_DL = 0;
+                    }else{
+                        controller.Wrong_DL = 1;
+                    }
+                }else if(CAN_RX_msg.len == 0){
+                    controller.Range_armed = 0;
+                    controller.Wrong_DL = 0;
+                }else{
+                    controller.Wrong_DL = 1;
+                }
                 break;
             }
 
@@ -1092,6 +1119,20 @@ void KT_data_CAN()
     controller.Send_heartbeat = 0;
 }
 
+/// @brief  Send the armed joint range (2 x 4 byte), no data while disarmed
+/// Direction Driver -> host
+void Range_CAN()
+{
+    intTo4Bytes(controller.Range_min, &CAN_TX_msg.data[0]);
+    intTo4Bytes(controller.Range_max, &CAN_TX_msg.data[4]);
+    CAN_TX_msg.len = controller.Range_armed ? 8 : 0;
+    CAN_TX_msg.type = DATA_FRAME;
+    CAN_TX_msg.format = STANDARD_FORMAT;
+    CAN_TX_msg.id = Combine_2_CAN_ID(controller.CAN_ID, IN_RANGE, controller.Error);
+    CANSend(&CAN_TX_msg);
+    controller.Send_heartbeat = 0;
+}
+
 /// @brief  Send state of all errors in motor driver (2 byte)
 /// Direction Driver -> host
 void State_of_Errors_CAN()
@@ -1099,7 +1140,8 @@ void State_of_Errors_CAN()
     bool Error_array[] = {controller.Error, controller.temperature_error, controller.encoder_error,
                           controller.Vbus_error, controller.Driver_error, controller.Velocity_error,
                           controller.Current_error, controller.ESTOP_error};
-    bool Error_array2[] = {controller.Calibrated, controller.Activated, controller.Watchdog_error, 0, 0, 0, 0, 0};
+    bool Error_array2[] = {controller.Calibrated, controller.Activated, controller.Watchdog_error,
+                           controller.Range_error, 0, 0, 0, 0};
 
     CAN_TX_msg.data[0] = bitsToByte(Error_array);
     CAN_TX_msg.data[1] = bitsToByte(Error_array2);

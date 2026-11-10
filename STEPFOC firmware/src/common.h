@@ -54,6 +54,9 @@ typedef struct
     volatile uint16_t Old_Position_Raw; // RAW position from sensor from previous cycle
     volatile int Position_Ticks;        // Position with multiple rotations
     volatile int Old_Position_Ticks;    // position with multiple rotations from previous cycle
+    volatile bool Range_armed = 0;      // IN_RANGE set a range
+    volatile int Range_min = 0;         // Range ends in Position_Ticks
+    volatile int Range_max = 0;
     volatile float Position_RAD;        // Raw position but in radians
     volatile float Electric_Angle;      // Electrical angle - depends on number of pole pairs
     volatile float theta_offset = 0.0f; // will be determined at calibration
@@ -114,6 +117,7 @@ typedef struct
     volatile bool Current_error = 0;     // We go past max current
     volatile bool ESTOP_error = 0;       // If we received estop command
     volatile bool Watchdog_error = 0;    // If we pass watchdog timeout time
+    volatile bool Range_error = 0;       // Left the range armed with IN_RANGE
 
     volatile int commutation = 0; // 0 is space vector, 1 is sine
 

@@ -217,6 +217,12 @@ CAN BUS CONSTANTS
 #define IN_SETTINGS 35
 #define SETTINGS_BIT_BRAKE_COAST (1 << 0) // 1 = brake, 0 = coast (controller.brake_coast)
 
+// Position_Ticks min and max (BE int32); DLC 0 disarms; RTR reads it back.
+// RAM only: the multi-turn count restarts at every boot.
+#define IN_RANGE 44
+// [ticks/s] Only outward motion trips, so a joint outside can be driven back in.
+#define RANGE_OUTWARD_TICKS_S 1000
+
 // INPUT CAN command IDS (Commands that spectral driver can receive)
 // To these commands spectral responds with specific command ID
 #define IN_DATA_PACK_1 2

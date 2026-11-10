@@ -81,6 +81,8 @@ void Current_data_CAN();
 
 void State_of_Errors_CAN();
 
+void Range_CAN();
+
 void Data_pack_1_CAN();
 
 void Data_pack_2_CAN();
