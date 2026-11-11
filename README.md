@@ -74,7 +74,6 @@ and Motor GUI. Some pictures in the manual show the Spectral Micro; the procedur
 | Folder | What is in it |
 |---|---|
 | [`STEPFOC firmware`](STEPFOC%20firmware/) | the firmware (PlatformIO) of release 103 and earlier, for boards without the bootloader; releases from 105 on are built from the [`bootloader-version`](https://github.com/Source-Robotics/STEPFOC-stepper-controller/tree/bootloader-version/STEPFOC%20firmware) branch |
-| [`Binaries`](Binaries/) | `firmware.bin`, the release 103 image |
 | [`STEP files`](STEP%20files/) | the STEP model of the board, the magnet and motor spacers for NEMA 17 and NEMA 23 ([`Stepper motor accessories`](STEP%20files/Stepper%20motor%20accessories/)), the magnet tool ([`Tools`](STEP%20files/Tools/)) |
 | [`Photos`](Photos/) | the product photo |
 
