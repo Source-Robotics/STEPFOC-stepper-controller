@@ -63,6 +63,7 @@ void Phase_order();
 void Collect_data2();
 void Gripper_mode();
 void Calibrate_gripper();
+void Gripper_calibration_abort();
 void Get_first_encoder();
 void Voltage_Torque_mode();
 void Brake_Coast();

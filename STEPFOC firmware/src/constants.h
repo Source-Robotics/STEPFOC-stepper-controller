@@ -512,6 +512,11 @@ CAN BUS CONSTANTS
 #define PARAM_BUILD_TIME 85         // R when it was built, Unix seconds UTC
 #define PARAM_BOARD_ID 86           // R this board: the chip's unique number folded into 32 bits; never changes
 #define PARAM_CALIBRATION_ID 87     // R a new random number at every successful calibration, saved by #Save; 0 none yet
+// 88 and 89 are the Spectral Micro's (the current-sense sampling point); the numbers are shared by both drives.
+#define PARAM_RSTINT 90             // RW 0/1: zero the velocity and current integrators on every setpoint command (#Rstint); saved by #Save
+#define PARAM_THERMISTOR 91         // RW 0/1: the thermistor measurement (#Term); saved by #Save
+#define PARAM_GRIPPER_MODE 92       // RW 0/1: gripper mode (#Gripper), in force at once; written only while idle; saved by #Save
+#define PARAM_GRIPPER_STROKE 93     // R the gripper's stroke between positions 0 and 255, ticks; 0 = not calibrated since power-up
 #ifndef BUILD_COMMIT                // set by build_id.py
 #define BUILD_COMMIT 0u
 #define BUILD_TIME 0u

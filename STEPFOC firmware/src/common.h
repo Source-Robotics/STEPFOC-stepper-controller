@@ -309,7 +309,9 @@ typedef struct
     // How to setup:
     // Phase resistance < 2; Voltage_limit = 6000;
 
-    // Do we want to reset integral accumulators after receiving new setopint, needs to be 1 for the gripper
+    // Do we want to reset integral accumulators after receiving new setopint. The gripper no longer needs 1:
+    // Gripper_mode() drops the speed loop's integral itself when the jaws arrive (2026-11). At 1 a host that
+    // repeats its command leaves the loops without their integral.
     volatile int Reset_integral_accumulator = 0;
 
     // Position loop PID
@@ -401,6 +403,9 @@ typedef struct
     volatile int min_speed = 500;
 
     volatile int In_calibration = 0;
+    // Set by the commands that start a gripper calibration (CAN 62, #Gripcal): Calibrate_gripper() then starts
+    // from its first step. A run that was cut short (idle, E-stop, an error) used to be resumed where it stopped.
+    volatile bool cal_restart = 0;
 
 } GRIPPER_STRUCT;
 
